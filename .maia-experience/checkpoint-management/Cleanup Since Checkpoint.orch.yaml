@@ -1,0 +1,229 @@
+type: "orchestration"
+version: "1.0"
+pipeline:
+  metadata:
+    description: "Cleans up tables/views created after a checkpoint. Dry run mode (default) shows what would be deleted. Set dry_run=NO to execute."
+  variables:
+    checkpoint_id:
+      metadata:
+        type: "TEXT"
+        description: "Checkpoint ID to revert to (sample View Available Checkpoints to find IDs)"
+        scope: "SHARED"
+        visibility: "PRIVATE"
+      defaultValue: ""
+    dry_run:
+      metadata:
+        type: "TEXT"
+        description: "YES = preview only, NO = execute deletion"
+        scope: "SHARED"
+        visibility: "PRIVATE"
+      defaultValue: "YES"
+  components:
+    Start:
+      type: "start"
+      transitions:
+        unconditional:
+          - "Check Dry Run Mode"
+      parameters:
+        componentName: "Start"
+    Check Dry Run Mode:
+      type: "if"
+      transitions:
+        true:
+          - "Preview Deletions"
+        false:
+          - "Execute Deletions"
+      parameters:
+        componentName: "Check Dry Run Mode"
+        mode: "Simple"
+        condition:
+          - - "dry_run"
+            - "Is"
+            - "Equal to"
+            - "YES"
+        combineConditions: "And"
+    Preview Deletions:
+      type: "python-pushdown"
+      parameters:
+        componentName: "Preview Deletions"
+        warehouse: "[Environment Default]"
+        pythonVersion: "3.10"
+        scriptLocation: "Component"
+        scriptTimeout: "360"
+        pythonScript: |
+          # Query objects that would be deleted
+          query = f"""
+          WITH checkpoint_objects AS (
+              SELECT 
+                  VALUE:name::STRING AS object_name,
+                  VALUE:type::STRING AS object_type
+              FROM CHECKPOINT_AUDIT,
+                   LATERAL FLATTEN(input => OBJECTS_SNAPSHOT:tables)
+              WHERE CHECKPOINT_ID = '${checkpoint_id}'
+          ),
+          current_objects AS (
+              SELECT 
+                  TABLE_NAME AS object_name,
+                  TABLE_TYPE AS object_type
+              FROM INFORMATION_SCHEMA.TABLES
+              WHERE TABLE_SCHEMA = CURRENT_SCHEMA()
+                AND TABLE_NAME != 'CHECKPOINT_AUDIT'
+          )
+          SELECT 
+              c.object_name,
+              c.object_type
+          FROM current_objects c
+          LEFT JOIN checkpoint_objects ch ON c.object_name = ch.object_name
+          WHERE ch.object_name IS NULL
+          ORDER BY 
+              CASE WHEN c.object_type = 'VIEW' THEN 1 ELSE 2 END,
+              c.object_name
+          """
+          
+          df = session.sql(query).collect()
+          
+          print("\n" + "="*60)
+          print("🔍 DRY RUN - PREVIEW OF OBJECTS TO DELETE")
+          print("="*60)
+          print(f"Checkpoint ID: ${checkpoint_id}")
+          print(f"\nObjects created after checkpoint (would be deleted):")
+          print()
+          
+          if len(df) == 0:
+              print("✅ No objects to delete - schema matches checkpoint state")
+          else:
+              views = [row for row in df if row['OBJECT_TYPE'] == 'VIEW']
+              tables = [row for row in df if row['OBJECT_TYPE'] in ('BASE TABLE', 'TABLE')]
+              
+              if views:
+                  print(f"\n📑 Views ({len(views)}):")
+                  for row in views:
+                      print(f"  - {row['OBJECT_NAME']}")
+              
+              if tables:
+                  print(f"\n📋 Tables ({len(tables)}):")
+                  for row in tables:
+                      print(f"  - {row['OBJECT_NAME']}")
+              
+              print(f"\nTotal: {len(df)} objects would be deleted")
+          
+          print("\n⚠️  To execute deletion, set dry_run=NO and run again")
+          print("="*60 + "\n")
+    Execute Deletions:
+      type: "python-pushdown"
+      transitions:
+        success:
+          - "Output Cleanup Results"
+      parameters:
+        componentName: "Execute Deletions"
+        warehouse: "[Environment Default]"
+        pythonVersion: "3.10"
+        scriptLocation: "Component"
+        scriptTimeout: "360"
+        pythonScript: |
+          # Query objects that need to be deleted
+          query = f"""
+          WITH checkpoint_objects AS (
+              SELECT 
+                  VALUE:name::STRING AS object_name,
+                  VALUE:type::STRING AS object_type
+              FROM CHECKPOINT_AUDIT,
+                   LATERAL FLATTEN(input => OBJECTS_SNAPSHOT:tables)
+              WHERE CHECKPOINT_ID = '${checkpoint_id}'
+          ),
+          current_objects AS (
+              SELECT 
+                  TABLE_NAME AS object_name,
+                  TABLE_TYPE AS object_type
+              FROM INFORMATION_SCHEMA.TABLES
+              WHERE TABLE_SCHEMA = CURRENT_SCHEMA()
+                AND TABLE_NAME != 'CHECKPOINT_AUDIT'
+          )
+          SELECT 
+              c.object_name,
+              c.object_type
+          FROM current_objects c
+          LEFT JOIN checkpoint_objects ch ON c.object_name = ch.object_name
+          WHERE ch.object_name IS NULL
+          ORDER BY 
+              CASE WHEN c.object_type = 'VIEW' THEN 1 ELSE 2 END,
+              c.object_name
+          """
+          
+          objects_to_delete = session.sql(query).collect()
+          
+          print("\n" + "="*60)
+          print("🗑️  EXECUTING CLEANUP")
+          print("="*60)
+          print(f"Checkpoint ID: ${checkpoint_id}")
+          print()
+          
+          if len(objects_to_delete) == 0:
+              print("✅ No objects to delete - schema matches checkpoint state")
+          else:
+              # Separate views and tables
+              views = [row for row in objects_to_delete if row['OBJECT_TYPE'] == 'VIEW']
+              tables = [row for row in objects_to_delete if row['OBJECT_TYPE'] in ('BASE TABLE', 'TABLE')]
+              
+              deleted_count = 0
+              
+              # Drop views first
+              if views:
+                  print(f"\nDropping {len(views)} view(s)...")
+                  for row in views:
+                      object_name = row['OBJECT_NAME']
+                      try:
+                          session.sql(f"DROP VIEW IF EXISTS {object_name}").collect()
+                          print(f"  ✓ Dropped view: {object_name}")
+                          deleted_count += 1
+                      except Exception as e:
+                          print(f"  ✗ Error dropping view {object_name}: {str(e)}")
+              
+              # Drop tables
+              if tables:
+                  print(f"\nDropping {len(tables)} table(s)...")
+                  for row in tables:
+                      object_name = row['OBJECT_NAME']
+                      try:
+                          session.sql(f"DROP TABLE IF EXISTS {object_name}").collect()
+                          print(f"  ✓ Dropped table: {object_name}")
+                          deleted_count += 1
+                      except Exception as e:
+                          print(f"  ✗ Error dropping table {object_name}: {str(e)}")
+              
+              print(f"\n✅ Successfully deleted {deleted_count} of {len(objects_to_delete)} objects")
+          
+          print("="*60 + "\n")
+
+    Output Cleanup Results:
+      type: "print-variables"
+      parameters:
+        componentName: "Output Cleanup Results"
+        variablesToPrint:
+          - - "checkpoint_id"
+          - - "dry_run"
+        prefixText: "✅ CLEANUP EXECUTED | Schema reverted to checkpoint |"
+        includeVariableName: "Yes"
+design:
+  components:
+    Start:
+      position:
+        x: 0
+        y: 0
+    Check Dry Run Mode:
+      position:
+        x: 160
+        y: 0
+    Preview Deletions:
+      position:
+        x: 320
+        y: -60
+    Execute Deletions:
+      position:
+        x: 320
+        y: 60
+
+    Output Cleanup Results:
+      position:
+        x: 480
+        y: 60

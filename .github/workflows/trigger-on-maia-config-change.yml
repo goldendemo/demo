@@ -1,0 +1,107 @@
+# .github/workflows/trigger-on-maia-config-change.yml
+
+name: 'Trigger Pipeline on Maia Config Change'
+
+# Triggers when maia_experience_config.md is pushed to any branch (except main/develop)
+on:
+  push:
+    paths:
+      - '.maia-experience/legacy-advanced-config/maia_experience_config.md'
+    branches-ignore:
+      - 'main'
+      - 'develop'
+
+jobs:
+  trigger-pipeline-on-config-change:
+    name: Parse Config and Trigger Pipeline
+    runs-on: ubuntu-latest
+    # Skip triggers if this is a merge commit or an automated setup push
+    if: github.ref_name != 'main' && github.ref_name != 'develop' && !startsWith(github.event.head_commit.message, 'Merge')
+
+    env:
+      # RESTORED: Using original UTILITY prefix mappings as per your repo state
+      UTILITY_DPC_CLIENT_ID: ${{ vars.UTILITY_DPC_CLIENT_ID }}
+      UTILITY_DPC_CLIENT_SECRET: ${{ secrets.UTILITY_DPC_CLIENT_SECRET }}
+      
+      # Maia Configuration (Variables)
+      UTILITY_DPC_PROJECT_ID: ${{ vars.UTILITY_DPC_PROJECT_ID }}
+      UTILITY_DPC_ACCOUNT_REGION: ${{ vars.UTILITY_DPC_ACCOUNT_REGION }}
+      UTILITY_DPC_API_VERSION: ${{ vars.UTILITY_DPC_API_VERSION }}
+      UTILITY_DPC_PIPELINE_NAME: ${{ vars.UTILITY_DPC_ADV_CONFIG_PIPELINE_NAME }}
+      UTILITY_DPC_ENVIRONMENT_NAME: ${{ vars.UTILITY_DPC_ENVIRONMENT_NAME }}
+      
+      # AWS Token references (Secrets because they contain "SECRET")
+      UTILITY_GH_TOKEN_SECRET_NAME: ${{ secrets.UTILITY_GH_TOKEN_SECRET_NAME }}
+      UTILITY_GH_TOKEN_SECRET_KEY: ${{ secrets.UTILITY_GH_TOKEN_SECRET_KEY }}
+      UTILITY_GH_TOKEN_SECRET_REGION: ${{ secrets.UTILITY_GH_TOKEN_SECRET_REGION }}
+
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+
+      - name: 'Get Matillion API Access Token'
+        id: get_token
+        run: |
+          TOKEN_RESPONSE=$(curl -s --location 'https://id.core.matillion.com/oauth/dpc/token' \
+                               --header 'Content-Type: application/x-www-form-urlencoded' \
+                               --data-urlencode 'grant_type=client_credentials' \
+                               --data-urlencode 'client_id=${{ env.UTILITY_DPC_CLIENT_ID }}' \
+                               --data-urlencode 'client_secret=${{ env.UTILITY_DPC_CLIENT_SECRET }}' \
+                               --data-urlencode 'audience=https://api.matillion.com')
+          ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r .access_token)
+          echo "::add-mask::$ACCESS_TOKEN"
+          echo "access_token=$ACCESS_TOKEN" >> $GITHUB_OUTPUT
+
+      - name: 'Build Payload and Call Matillion DPC API'
+        run: |
+          CONFIG_FILE=".maia-experience/legacy-advanced-config/maia_experience_config.md"
+          
+          # Use DPC API Domain variable from variables
+          API_DOMAIN="${{ vars.DPC_API_DOMAIN || 'api.matillion.com' }}"
+          API_URL="https://${{ env.UTILITY_DPC_ACCOUNT_REGION }}.${API_DOMAIN}/dpc/${{ env.UTILITY_DPC_API_VERSION }}/projects/${{ env.UTILITY_DPC_PROJECT_ID }}/pipeline-executions"
+
+          # This robust command uses awk to extract key-value pairs from the markdown file
+          # jq then constructs the final JSON payload including the gridVariables
+          JSON_PAYLOAD=$( \
+            awk -F':' '/:/ && !/^#/ {
+              key=$1;
+              value=substr($0, index($0,":") + 1);
+              gsub(/^[ \t]*|[ \t]*$/, "", key);
+              gsub(/^[ \t]*|[ \t]*$/, "", value);
+              print key;
+              print value;
+            }' "$CONFIG_FILE" | \
+            jq -n -R \
+              --arg pipelineName "${{ env.UTILITY_DPC_PIPELINE_NAME }}" \
+              --arg envName "${{ env.UTILITY_DPC_ENVIRONMENT_NAME }}" \
+              --arg branch "${{ github.ref_name }}" \
+              --arg org "${{ github.repository_owner }}" \
+              --arg repo "${{ github.event.repository.name }}" \
+              --arg secretName "${{ env.UTILITY_GH_TOKEN_SECRET_NAME }}" \
+              --arg secretKey "${{ env.UTILITY_GH_TOKEN_SECRET_KEY }}" \
+              --arg secretRegion "${{ env.UTILITY_GH_TOKEN_SECRET_REGION }}" \
+              '[inputs] | . as $lines |
+               [range(0; $lines | length; 2) | [$lines[.], $lines[.+1]]] as $rows |
+               {
+                 "pipelineName": $pipelineName,
+                 "environmentName": $envName,
+                 "scalarVariables": {
+                   "pipe_branch": $branch,
+                   "pipe_gh_org": $org,
+                   "pipe_gh_repo": $repo,
+                   "pipe_test_mode": "False",
+                   "pipe_gh_token_secret": $secretName,
+                   "pipe_gh_token_secret_key": $secretKey,
+                   "pipe_gh_token_secret_region": $secretRegion
+                 },
+                 "gridVariables": {
+                   "gv_branch_metadata": $rows
+                 }
+               }'
+          )
+
+          # Execute the API call
+          curl -s --request POST --url "$API_URL" \
+               --header "Authorization: Bearer ${{ steps.get_token.outputs.access_token }}" \
+               --header "Content-Type: application/json" \
+               --data "$JSON_PAYLOAD" --fail

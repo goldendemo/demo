@@ -1,0 +1,195 @@
+# .github/workflows/process-s3-manifest.yml
+# Handles both v2 config and legacy advanced config manifest structures
+# Fixes: jq error when processing legacy array-based manifests
+
+name: 'Process S3 Manifest and Write Files'
+
+on:
+  repository_dispatch:
+    types: [process-s3-manifest]
+
+jobs:
+  process-manifest:
+    name: Download Manifest and Write Files
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 'Configure AWS Credentials'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # RETAINED: Using the specific utility secret region as requested
+          aws-region: ${{ vars.AWS_S3_REGION }}
+
+      - name: 'Checkout specific branch'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.branch_name }}
+          token: ${{ secrets.REPO_ACCESS_TOKEN }}
+
+      - name: 'Download and Process S3 Manifest'
+        id: process_files
+        env:
+          S3_MANIFEST_URI: ${{ github.event.client_payload.s3_manifest_uri }}
+        run: |
+          echo "Downloading manifest from $S3_MANIFEST_URI"
+          aws s3 cp "$S3_MANIFEST_URI" manifest.json
+          echo "Manifest downloaded."
+          
+          # Extract environment_name from manifest metadata (if present)
+          if jq -e '.metadata.environment_name' manifest.json > /dev/null 2>&1; then
+            ENVIRONMENT_NAME=$(jq -r '.metadata.environment_name' manifest.json)
+            echo "Found environment_name in manifest: $ENVIRONMENT_NAME"
+            echo "environment_name=$ENVIRONMENT_NAME" >> $GITHUB_OUTPUT
+          else
+            echo "No environment_name in manifest, defaulting to 'demo'"
+            echo "environment_name=demo" >> $GITHUB_OUTPUT
+          fi
+          
+          # Extract checkpoint_description from manifest metadata (if present)
+          if jq -e '.metadata.checkpoint_description' manifest.json > /dev/null 2>&1; then
+            CHECKPOINT_DESC=$(jq -r '.metadata.checkpoint_description' manifest.json)
+            echo "Found checkpoint_description in manifest: $CHECKPOINT_DESC"
+            echo "checkpoint_description=$CHECKPOINT_DESC" >> $GITHUB_OUTPUT
+          else
+            echo "No checkpoint_description in manifest, using default"
+            echo "checkpoint_description=" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "Processing files..."
+          
+          # Detect manifest structure and process accordingly
+          if jq -e '.files' manifest.json > /dev/null 2>&1; then
+            # New v2 config structure: {files: [...], metadata: {...}}
+            echo "Detected v2 config manifest structure"
+            jq -c '.files[]' manifest.json | while read -r file_obj; do
+              FILE_PATH=$(echo "$file_obj" | jq -r '.path')
+              FILE_CONTENT=$(echo "$file_obj" | jq -r '.content')
+              echo "Writing to file: $FILE_PATH"
+              mkdir -p "$(dirname "$FILE_PATH")"
+              echo "$FILE_CONTENT" > "$FILE_PATH"
+              echo "$FILE_PATH" >> file_list.txt
+            done
+          elif jq -e 'type == "array"' manifest.json > /dev/null 2>&1; then
+            # Legacy advanced config structure: [{path: "...", content: "..."}, ...]
+            echo "Detected legacy advanced config manifest structure"
+            jq -c '.[]' manifest.json | while read -r file_obj; do
+              FILE_PATH=$(echo "$file_obj" | jq -r '.path')
+              FILE_CONTENT=$(echo "$file_obj" | jq -r '.content')
+              echo "Writing to file: $FILE_PATH"
+              mkdir -p "$(dirname "$FILE_PATH")"
+              echo "$FILE_CONTENT" > "$FILE_PATH"
+              echo "$FILE_PATH" >> file_list.txt
+            done
+          else
+            echo "::error::Unknown manifest structure."
+            exit 1
+          fi
+          
+          echo "All files written successfully."
+
+      - name: 'Commit and push changes'
+        id: commit_changes
+        env:
+          COMMIT_MESSAGE: ${{ github.event.client_payload.commit_message }}
+        run: |
+          if [ ! -s file_list.txt ]; then
+            echo "No files were created. Nothing to commit."
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          
+          BEFORE_COMMIT=$(git rev-parse HEAD)
+          echo "before_commit=$BEFORE_COMMIT" >> $GITHUB_OUTPUT
+          
+          while IFS= read -r file; do
+            git add "$file"
+          done < file_list.txt
+          
+          if git diff-index --quiet HEAD; then
+            echo "No changes to commit."
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            git commit -m "${COMMIT_MESSAGE:-Update files from S3 manifest}"
+            git push
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            AFTER_COMMIT=$(git rev-parse HEAD)
+            echo "after_commit=$AFTER_COMMIT" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 'Check if init_maia_data.sql was changed'
+        id: check_sql_change
+        run: |
+          if [ "${{ steps.commit_changes.outputs.has_changes }}" != "true" ]; then
+            echo "No changes were committed. Skipping SQL check."
+            echo "sql_changed=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          BEFORE="${{ steps.commit_changes.outputs.before_commit }}"
+          AFTER="${{ steps.commit_changes.outputs.after_commit }}"
+          
+          if git diff --name-only "$BEFORE" "$AFTER" | grep -q ".maia-experience/sql-init/init_maia_data.sql"; then
+            echo "init_maia_data.sql was changed in git commit."
+            echo "sql_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "init_maia_data.sql was not changed."
+            echo "sql_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Python
+        if: steps.commit_changes.outputs.has_changes == 'true' && steps.check_sql_change.outputs.sql_changed == 'true'
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+
+      - name: Install Dependencies
+        if: steps.commit_changes.outputs.has_changes == 'true' && steps.check_sql_change.outputs.sql_changed == 'true'
+        run: pip install requests
+
+      - name: Calculate Version
+        if: steps.commit_changes.outputs.has_changes == 'true' && steps.check_sql_change.outputs.sql_changed == 'true'
+        id: calculate_version
+        run: |
+          TIMESTAMP=$(date -u +"%Y%m%d-%H%M%S")
+          echo "next_version=${{ github.event.client_payload.branch_name }}-${TIMESTAMP}" >> $GITHUB_OUTPUT
+
+      - name: Publish and Run Pipeline
+        if: steps.commit_changes.outputs.has_changes == 'true' && steps.check_sql_change.outputs.sql_changed == 'true'
+        run: python ".github/cicd-scripts/dpc_publish_maia_demo.py"
+        env:
+          # Using original standard credentials for this artifact script
+          DPC_CLIENT_ID: ${{ secrets.DPC_CLIENT_ID }}
+          DPC_CLIENT_SECRET: ${{ secrets.DPC_CLIENT_SECRET }}
+          DPC_TOKEN_URL: ${{ vars.DPC_TOKEN_URL }}
+          DPC_PROJECT_ID: ${{ vars.DPC_PROJECT_ID }}
+          DPC_ACCOUNT_REGION: ${{ vars.DPC_ACCOUNT_REGION }}
+          DPC_API_DOMAIN: ${{ vars.DPC_API_DOMAIN }}
+          VERSION_NAME: ${{ steps.calculate_version.outputs.next_version }}
+          BRANCH_NAME: ${{ github.event.client_payload.branch_name }}
+          DPC_ENVIRONMENT_NAME: ${{ steps.process_files.outputs.environment_name }}
+          DPC_CHECKPOINT_DESCRIPTION: ${{ steps.process_files.outputs.checkpoint_description }}
+
+      - name: Tag Commit
+        if: steps.commit_changes.outputs.has_changes == 'true' && steps.check_sql_change.outputs.sql_changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tagName = '${{ steps.calculate_version.outputs.next_version }}';
+            const sha = await github.rest.repos.getBranch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              branch: '${{ github.event.client_payload.branch_name }}'
+            }).then(r => r.data.commit.sha);
+
+            await github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/tags/${tagName}`,
+              sha: sha
+            });

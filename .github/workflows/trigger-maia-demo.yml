@@ -1,0 +1,164 @@
+# .github/workflows/trigger-maia-demo.yml
+name: 'Trigger Maia Demo Creation'
+
+on:
+  push:
+    paths:
+      - '.maia-experience/maia_demo_config.yaml'
+    branches-ignore:
+      - 'main'
+      - 'develop'
+      - 'feature*'
+
+jobs:
+  trigger-demo-creation:
+    name: Parse Config and Trigger Demo Pipeline
+    runs-on: ubuntu-latest
+    if: github.ref_name != 'main' && github.ref_name != 'develop'
+
+    env:
+      # Credentials (ID is a Var, Secret is a Secret per repo state)
+      UTILITY_DPC_CLIENT_ID: ${{ vars.UTILITY_DPC_CLIENT_ID }}
+      UTILITY_DPC_CLIENT_SECRET: ${{ secrets.UTILITY_DPC_CLIENT_SECRET }}
+      
+      # Maia Configuration (Variables)
+      UTILITY_DPC_PROJECT_ID: ${{ vars.UTILITY_DPC_PROJECT_ID }}
+      UTILITY_DPC_ACCOUNT_REGION: ${{ vars.UTILITY_DPC_ACCOUNT_REGION }}
+      UTILITY_DPC_API_VERSION: ${{ vars.UTILITY_DPC_API_VERSION }}
+      UTILITY_DPC_PIPELINE_NAME_V2: ${{ vars.UTILITY_DPC_PIPELINE_NAME_V2 }}
+      UTILITY_DPC_ENVIRONMENT_NAME: ${{ vars.UTILITY_DPC_ENVIRONMENT_NAME }}
+      UTILITY_DPC_PIPELINE_VERSION: ${{ vars.UTILITY_DPC_PIPELINE_VERSION }}
+      
+      # AWS Token references (Secrets)
+      UTILITY_GH_TOKEN_SECRET_NAME: ${{ secrets.UTILITY_GH_TOKEN_SECRET_NAME }}
+      UTILITY_GH_TOKEN_SECRET_KEY: ${{ secrets.UTILITY_GH_TOKEN_SECRET_KEY }}
+      UTILITY_GH_TOKEN_SECRET_REGION: ${{ secrets.UTILITY_GH_TOKEN_SECRET_REGION }}
+
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: 'Configure AWS Credentials'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_S3_REGION }}
+      
+      - name: 'Determine Environment Name'
+        id: determine_environment
+        run: |
+          CONFIG_FILE=".maia-experience/maia_demo_config.yaml"
+          MAPPING_FILE=".maia-experience/user-environment-mappings.yaml"
+          GH_USER="${{ github.actor }}"
+          
+          if [ -f "$CONFIG_FILE" ]; then
+            ENV_FROM_CONFIG=$(python3 .github/cicd-scripts/check_config_env.py)
+            if [ -n "$ENV_FROM_CONFIG" ]; then
+              echo "environment_name=$ENV_FROM_CONFIG" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+          
+          if [ -f "$MAPPING_FILE" ]; then
+            ENV_FROM_MAPPING=$(GH_USER="$GH_USER" python3 .github/cicd-scripts/check_user_mapping.py)
+            ENV_NAME=$(echo "$ENV_FROM_MAPPING" | cut -d'|' -f1)
+            echo "environment_name=$ENV_NAME" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "environment_name=demo" >> $GITHUB_OUTPUT
+
+      - name: 'Upload Content Files to S3'
+        id: upload_content
+        run: |
+          S3_BUCKET="${{ vars.AWS_S3_BUCKET }}"
+          S3_BASE_PATH="s3://${S3_BUCKET}/${{ github.repository_owner }}/${{ github.event.repository.name }}/${{ github.ref_name }}"
+          
+          python3 << 'EOF' > content_files.json
+          import yaml, json, os, subprocess
+          with open('.maia-experience/maia_demo_config.yaml', 'r') as f:
+              config = yaml.safe_load(f)
+          uploaded = []
+          for item in config.get('content', []):
+              file_path = item['file']
+              filename = os.path.basename(file_path)
+              s3_path = f"{os.environ['S3_BASE_PATH']}/{filename}"
+              subprocess.run(['aws', 's3', 'cp', file_path, s3_path], check=True)
+              uploaded.append({"s3_uri": s3_path, "filename": filename})
+          print(json.dumps(uploaded))
+          EOF
+        env:
+          S3_BASE_PATH: "s3://${{ vars.AWS_S3_BUCKET }}/${{ github.repository_owner }}/${{ github.event.repository.name }}/${{ github.ref_name }}"
+
+      - name: 'Build and Upload Config Manifest to S3'
+        id: upload_manifest
+        run: |
+          python3 << 'EOF' > config_manifest.json
+          import yaml, json, os
+          with open('.maia-experience/maia_demo_config.yaml') as f:
+              config = yaml.safe_load(f)
+          demo_section = config.get('demo', {})
+          # The manifest metadata uses the "determined" name
+          demo_section['environment_name'] = os.environ.get('DETERMINED_ENV')
+          manifest = {
+              "config_version": "v2",
+              "demo": demo_section,
+              "preferences": config.get('preferences', {}),
+              "pipeline": config.get('pipeline', {}),
+              "metadata": {
+                  "branch": os.environ.get('BRANCH', ''),
+                  "org": os.environ.get('ORG', ''),
+                  "repo": os.environ.get('REPO', '')
+              }
+          }
+          print(json.dumps(manifest, indent=2))
+          EOF
+          S3_PATH="s3://${{ vars.AWS_S3_BUCKET }}/${{ github.repository_owner }}/${{ github.event.repository.name }}/${{ github.ref_name }}/maia_v2_config_manifest.json"
+          aws s3 cp config_manifest.json "$S3_PATH"
+          echo "s3_manifest_uri=$S3_PATH" >> $GITHUB_OUTPUT
+        env:
+          DETERMINED_ENV: ${{ steps.determine_environment.outputs.environment_name }}
+          BRANCH: ${{ github.ref_name }}
+          ORG: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+
+      - name: 'Get API Token'
+        id: get_token
+        run: |
+          TOKEN=$(curl -s --location 'https://id.core.matillion.com/oauth/dpc/token' \
+            --header 'Content-Type: application/x-www-form-urlencoded' \
+            --data-urlencode 'grant_type=client_credentials' \
+            --data-urlencode 'client_id=${{ env.UTILITY_DPC_CLIENT_ID }}' \
+            --data-urlencode 'client_secret=${{ env.UTILITY_DPC_CLIENT_SECRET }}' \
+            --data-urlencode 'audience=https://api.matillion.com' | jq -r .access_token)
+          echo "::add-mask::$TOKEN"
+          echo "access_token=$TOKEN" >> $GITHUB_OUTPUT
+
+      - name: 'Call DPC API'
+        run: |
+          API_DOMAIN="${{ vars.DPC_API_DOMAIN || 'api.matillion.com' }}"
+          API_URL="https://${{ env.UTILITY_DPC_ACCOUNT_REGION }}.${API_DOMAIN}/dpc/${{ env.UTILITY_DPC_API_VERSION }}/projects/${{ env.UTILITY_DPC_PROJECT_ID }}/pipeline-executions"
+          
+          # RESTORED: API payload uses UTILITY_DPC_ENVIRONMENT_NAME variable
+          JSON_PAYLOAD=$(jq -n \
+            --arg pipelineName "${{ env.UTILITY_DPC_PIPELINE_NAME_V2 }}" \
+            --arg environmentName "${{ env.UTILITY_DPC_ENVIRONMENT_NAME }}" \
+            --arg pipe_branch "${{ github.ref_name }}" \
+            --arg pipe_s3_config_uri "${{ steps.upload_manifest.outputs.s3_manifest_uri }}" \
+            --arg pipe_gh_org "${{ github.repository_owner }}" \
+            --arg pipe_gh_repo "${{ github.event.repository.name }}" \
+            --arg sN "${{ env.UTILITY_GH_TOKEN_SECRET_NAME }}" \
+            --arg sK "${{ env.UTILITY_GH_TOKEN_SECRET_KEY }}" \
+            --arg sR "${{ env.UTILITY_GH_TOKEN_SECRET_REGION }}" \
+            '{pipelineName:$pipelineName,environmentName:$environmentName,scalarVariables:{pipe_branch:$pipe_branch,pipe_s3_config_uri:$pipe_s3_config_uri,pipe_gh_org:$pipe_gh_org,pipe_gh_repo:$pipe_gh_repo,pipe_gh_token_secret:$sN,pipe_gh_token_secret_key:$sK,pipe_gh_token_secret_region:$sR}}')
+          
+          if [[ -n "${{ env.UTILITY_DPC_PIPELINE_VERSION }}" && "${{ env.UTILITY_DPC_PIPELINE_VERSION }}" != "LATEST" ]]; then
+            JSON_PAYLOAD=$(echo "$JSON_PAYLOAD" | jq --arg v "${{ env.UTILITY_DPC_PIPELINE_VERSION }}" '. + {versionName:$v}')
+          fi
+          
+          curl -s --request POST --url "$API_URL" \
+            --header "Authorization: Bearer ${{ steps.get_token.outputs.access_token }}" \
+            --header "Content-Type: application/json" \
+            --data "$JSON_PAYLOAD" --fail

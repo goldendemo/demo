@@ -1,0 +1,252 @@
+type: "orchestration"
+version: "1.0"
+pipeline:
+  metadata:
+    description: "Deletes ALL tables and views in schema (except CHECKPOINT_AUDIT).\
+      \ Requires confirm_delete_all=DELETE_ALL and dry_run=NO to execute."
+  components:
+    Start:
+      type: "start"
+      transitions:
+        unconditional:
+        - "Check Safety Confirmation"
+      parameters:
+        componentName: "Start"
+    Check Safety Confirmation:
+      type: "if"
+      transitions:
+        "true":
+        - "Check Dry Run Mode"
+        "false":
+        - "Safety Check Failed"
+      parameters:
+        componentName: "Check Safety Confirmation"
+        mode: "Simple"
+        condition:
+        - - "confirm_delete_all"
+          - "Is"
+          - "Equal to"
+          - "DELETE_ALL"
+        combineConditions: "And"
+    Safety Check Failed:
+      type: "print-variables"
+      transitions:
+        success:
+        - "End with Failure"
+      parameters:
+        componentName: "Safety Check Failed"
+        variablesToPrint:
+        - - "confirm_delete_all"
+        - - "dry_run"
+        prefixText: "❌ SAFETY CHECK FAILED | confirm_delete_all must be 'DELETE_ALL'\
+          \ |"
+        includeVariableName: "Yes"
+    End with Failure:
+      type: "end-failure"
+      parameters:
+        componentName: "End with Failure"
+    Check Dry Run Mode:
+      type: "if"
+      transitions:
+        "true":
+        - "Preview Full Cleanup"
+        "false":
+        - "Execute Full Cleanup"
+      parameters:
+        componentName: "Check Dry Run Mode"
+        mode: "Simple"
+        condition:
+        - - "dry_run"
+          - "Is"
+          - "Equal to"
+          - "YES"
+        combineConditions: "And"
+    Preview Full Cleanup:
+      type: "python-pushdown"
+      parameters:
+        componentName: "Preview Full Cleanup"
+        warehouse: "[Environment Default]"
+        pythonVersion: "3.10"
+        scriptLocation: "Component"
+        scriptTimeout: "360"
+        pythonScript: "# Query all objects that would be deleted\nquery = \"\"\"\n\
+          SELECT \n    TABLE_NAME AS object_name,\n    TABLE_TYPE AS object_type,\n\
+          \    ROW_COUNT,\n    BYTES\nFROM INFORMATION_SCHEMA.TABLES\nWHERE TABLE_SCHEMA\
+          \ = CURRENT_SCHEMA()\n  AND TABLE_NAME != 'CHECKPOINT_AUDIT'\nORDER BY \n\
+          \    CASE WHEN TABLE_TYPE = 'VIEW' THEN 1 ELSE 2 END,\n    TABLE_NAME\n\"\
+          \"\"\n\ndf = session.sql(query).collect()\n\nprint(\"\\n\" + \"=\"*60)\n\
+          print(\"🔍 DRY RUN - PREVIEW OF FULL SCHEMA CLEANUP\")\nprint(\"=\"*60)\n\
+          print(\"⚠️  ALL OBJECTS WOULD BE DELETED (except CHECKPOINT_AUDIT)\")\n\
+          print()\n\nif len(df) == 0:\n    print(\"✅ No objects to delete - schema\
+          \ is empty\")\nelse:\n    views = [row for row in df if row['OBJECT_TYPE']\
+          \ == 'VIEW']\n    tables = [row for row in df if row['OBJECT_TYPE'] in ('BASE\
+          \ TABLE', 'TABLE')]\n    \n    if views:\n        print(f\"\\n📑 Views ({len(views)}):\"\
+          )\n        for row in views:\n            print(f\"  - {row['OBJECT_NAME']}\"\
+          )\n    \n    if tables:\n        print(f\"\\n📋 Tables ({len(tables)}):\"\
+          )\n        for row in tables:\n            rows = row['ROW_COUNT'] if row['ROW_COUNT']\
+          \ else 0\n            bytes_size = row['BYTES'] if row['BYTES'] else 0\n\
+          \            size_mb = bytes_size / (1024 * 1024) if bytes_size > 0 else\
+          \ 0\n            print(f\"  - {row['OBJECT_NAME']} ({rows:,} rows, {size_mb:.2f}\
+          \ MB)\")\n    \n    print(f\"\\nTotal: {len(df)} objects would be deleted\"\
+          )\n\nprint(\"\\n⚠️  To execute FULL cleanup:\")\nprint(\"  1. Verify confirm_delete_all\
+          \ = 'DELETE_ALL'\")\nprint(\"  2. Set dry_run = 'NO'\")\nprint(\"  3. Run\
+          \ again\")\nprint(\"=\"*60 + \"\\n\")\n"
+    Execute Full Cleanup:
+      type: "python-pushdown"
+      transitions:
+        success:
+        - "Output Cleanup Results"
+      parameters:
+        componentName: "Execute Full Cleanup"
+        warehouse: "[Environment Default]"
+        pythonVersion: "3.10"
+        scriptLocation: "Component"
+        scriptTimeout: "360"
+        pythonScript: |
+          # Query all objects to delete
+          query = """
+          SELECT 
+              TABLE_NAME AS object_name,
+              TABLE_TYPE AS object_type
+          FROM INFORMATION_SCHEMA.TABLES
+          WHERE TABLE_SCHEMA = CURRENT_SCHEMA()
+            AND TABLE_NAME != 'CHECKPOINT_AUDIT'
+          ORDER BY 
+              CASE WHEN TABLE_TYPE = 'VIEW' THEN 1 ELSE 2 END,
+              TABLE_NAME
+          """
+          
+          objects_to_delete = session.sql(query).collect()
+          
+          print("\n" + "="*60)
+          print("🗑️  EXECUTING FULL SCHEMA CLEANUP")
+          print("="*60)
+          print("⚠️  DELETING ALL OBJECTS (except CHECKPOINT_AUDIT)")
+          print()
+          
+          if len(objects_to_delete) == 0:
+              print("✅ No objects to delete - schema is empty")
+          else:
+              # Separate views and tables
+              views = [row for row in objects_to_delete if row['OBJECT_TYPE'] == 'VIEW']
+              tables = [row for row in objects_to_delete if row['OBJECT_TYPE'] in ('BASE TABLE', 'TABLE')]
+              
+              deleted_count = 0
+              
+              # Drop views first
+              if views:
+                  print(f"\nDropping {len(views)} view(s)...")
+                  for row in views:
+                      object_name = row['OBJECT_NAME']
+                      try:
+                          session.sql(f"DROP VIEW IF EXISTS {object_name}").collect()
+                          print(f"  ✓ Dropped view: {object_name}")
+                          deleted_count += 1
+                      except Exception as e:
+                          print(f"  ✗ Error dropping view {object_name}: {str(e)}")
+              
+              # Drop tables
+              if tables:
+                  print(f"\nDropping {len(tables)} table(s)...")
+                  for row in tables:
+                      object_name = row['OBJECT_NAME']
+                      try:
+                          session.sql(f"DROP TABLE IF EXISTS {object_name}").collect()
+                          print(f"  ✓ Dropped table: {object_name}")
+                          deleted_count += 1
+                      except Exception as e:
+                          print(f"  ✗ Error dropping table {object_name}: {str(e)}")
+              
+              print(f"\n✅ Successfully deleted {deleted_count} of {len(objects_to_delete)} objects")
+          
+          # Log cleanup in audit table
+          timestamp_str = session.sql("SELECT TO_VARCHAR(CURRENT_TIMESTAMP(), 'YYYYMMDD_HH24MISS')").collect()[0][0]
+          checkpoint_id = f"FULL_CLEANUP_{timestamp_str}"
+          session.sql(f"""
+          INSERT INTO CHECKPOINT_AUDIT (
+              CHECKPOINT_ID,
+              CHECKPOINT_TIMESTAMP,
+              CHECKPOINT_TYPE,
+              CREATED_BY,
+              DESCRIPTION,
+              STATUS
+          )
+          VALUES (
+              '{checkpoint_id}',
+              CURRENT_TIMESTAMP(),
+              'CLEANUP',
+              CURRENT_USER(),
+              'Full schema cleanup executed',
+              'ACTIVE'
+          )
+          """).collect()
+          
+          print(f"\nLogged cleanup as: {checkpoint_id}")
+          print("="*60 + "\n")
+    Output Cleanup Results:
+      type: "print-variables"
+      parameters:
+        componentName: "Output Cleanup Results"
+        variablesToPrint:
+        - - "dry_run"
+        - - "confirm_delete_all"
+        prefixText: "✅ FULL CLEANUP EXECUTED | ALL objects deleted (except CHECKPOINT_AUDIT)\
+          \ |"
+        includeVariableName: "Yes"
+  variables:
+    dry_run:
+      metadata:
+        type: "TEXT"
+        description: "YES = preview only, NO = execute deletion"
+        scope: "SHARED"
+        visibility: "PRIVATE"
+      defaultValue: "YES"
+    confirm_delete_all:
+      metadata:
+        type: "TEXT"
+        description: "Must be set to DELETE_ALL to execute (safety check)"
+        scope: "SHARED"
+        visibility: "PRIVATE"
+      defaultValue: ""
+design:
+  components:
+    Output Cleanup Results:
+      position:
+        x: 640
+        "y": 60
+      tempMetlId: 8
+    Start:
+      position:
+        x: 0
+        "y": 0
+      tempMetlId: 1
+    Preview Full Cleanup:
+      position:
+        x: 480
+        "y": -60
+      tempMetlId: 6
+    Check Dry Run Mode:
+      position:
+        x: 320
+        "y": 0
+      tempMetlId: 5
+    Execute Full Cleanup:
+      position:
+        x: 480
+        "y": 60
+      tempMetlId: 7
+    Check Safety Confirmation:
+      position:
+        x: 160
+        "y": 0
+      tempMetlId: 2
+    Safety Check Failed:
+      position:
+        x: 320
+        "y": -140
+      tempMetlId: 3
+    End with Failure:
+      position:
+        x: 480
+        "y": -140
+      tempMetlId: 4

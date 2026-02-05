@@ -1,0 +1,20 @@
+# User to Environment Mappings
+# Maps GitHub usernames to DPC environment names
+#
+# Priority Order (highest to lowest):
+# 1. environment_name in manifest metadata (explicit override)
+# 2. User mapping from this file
+# 3. Default environment
+#
+# Usage:
+# - When a user pushes changes, the workflow looks up their GitHub username
+# - If found in mappings below, that environment is used
+# - If not found, the default environment is used
+# - If manifest has environment_name, that always takes precedence
+
+mappings:
+  # Example mappings - add your GitHub usernames here
+  # username: "environment_name"
+  
+# Default environment when no mapping found and no manifest override
+default: "demo"

@@ -1,0 +1,140 @@
+# .github/workflows/trigger-maia-demo-init.yml
+name: 'Trigger Maia Demo Creation on New Branch (v2 - Hybrid)'
+
+on:
+  create:
+
+jobs:
+  check-trigger-condition:
+    name: Check Trigger Condition
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'branch' && github.ref_name != 'main' && github.ref_name != 'develop'
+    outputs:
+      should_run: ${{ steps.check_author.outputs.should_run }}
+
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 1
+
+      - name: 'Check if commit author is the bot'
+        id: check_author
+        run: |
+          AUTHOR_EMAIL=$(git log -1 --pretty=format:'%ae')
+          if [[ "$AUTHOR_EMAIL" == "github-actions[bot]@users.noreply.github.com" ]]; then
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          else
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          fi
+
+  run-pipeline-logic:
+    name: Parse Branch and Trigger Pipeline
+    runs-on: ubuntu-latest
+    needs: check-trigger-condition
+    if: needs.check-trigger-condition.outputs.should_run == 'true'
+    permissions:
+      contents: write
+
+    env:
+      UTILITY_DPC_CLIENT_ID: ${{ vars.UTILITY_DPC_CLIENT_ID }}
+      UTILITY_DPC_CLIENT_SECRET: ${{ secrets.UTILITY_DPC_CLIENT_SECRET }}
+      UTILITY_DPC_PROJECT_ID: ${{ vars.UTILITY_DPC_PROJECT_ID }}
+      UTILITY_DPC_ACCOUNT_REGION: ${{ vars.UTILITY_DPC_ACCOUNT_REGION }}
+      UTILITY_DPC_API_VERSION: ${{ vars.UTILITY_DPC_API_VERSION }}
+      UTILITY_DPC_PIPELINE_NAME: ${{ vars.UTILITY_DPC_PIPELINE_NAME }}
+      UTILITY_DPC_ENVIRONMENT_NAME: ${{ vars.UTILITY_DPC_ENVIRONMENT_NAME }}
+      UTILITY_DPC_PIPELINE_VERSION: ${{ vars.UTILITY_DPC_PIPELINE_VERSION }}
+      UTILITY_GH_TOKEN_SECRET_NAME: ${{ secrets.UTILITY_GH_TOKEN_SECRET_NAME }}
+      UTILITY_GH_TOKEN_SECRET_KEY: ${{ secrets.UTILITY_GH_TOKEN_SECRET_KEY }}
+      UTILITY_GH_TOKEN_SECRET_REGION: ${{ secrets.UTILITY_GH_TOKEN_SECRET_REGION }}
+
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.REPO_ACCESS_TOKEN }}
+
+      - name: 'Validate Branch Name Format'
+        id: validate_branch
+        run: |
+          if [[ "${{ github.ref_name }}" =~ ^[^_]+_[^_]+_[^_]+$ ]]; then
+            echo "is_valid=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_valid=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 'Update Context File'
+        if: steps.validate_branch.outputs.is_valid == 'false'
+        run: |
+          mkdir -p .matillion/maia/rules
+          cat > .matillion/maia/rules/context.md << 'EOF'
+          # Maia Experience Configuration Required
+          
+          ## Status
+          ⚠️ **No Maia Experience automation has been run yet.**
+          
+          ## Next Steps
+          To configure your personalized Maia demo environment:
+          
+          ### 1. Update Configuration File
+          Open `.maia-experience/maia_demo_config.yaml` and update the required fields:
+          
+          ```yaml
+          demo:
+            company: "Your Company Name"
+            role: "Your Role"
+            name: "Your Name"
+            description: "Brief description of your data goals"
+            environment_name: "demo"
+          ```
+          
+          ### 2. Commit and Push Your Changes
+          The automation will then process your configuration and provision your environment.
+          
+          ---
+          **Note:** Alternatively, you can use the `company_role_name` branch naming format (e.g., `Acme_Engineer_John`) to trigger automation immediately upon branch creation.
+          EOF
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add .matillion/maia/rules/context.md
+          git diff-index --quiet HEAD || (git commit -m "docs: add Maia configuration instructions" && git push)
+
+      - name: 'Call Matillion DPC API'
+        if: steps.validate_branch.outputs.is_valid == 'true'
+        run: |
+          BRANCH_NAME="${{ github.ref_name }}"
+          COMPANY=$(echo "$BRANCH_NAME" | cut -d'_' -f1 | sed 's/-/ /g')
+          ROLE=$(echo "$BRANCH_NAME" | cut -d'_' -f2 | sed 's/-/ /g')
+          NAME=$(echo "$BRANCH_NAME" | cut -d'_' -f3 | sed 's/-/ /g')
+          
+          TOKEN_RESPONSE=$(curl -s --location 'https://id.core.matillion.com/oauth/dpc/token' \
+                                --header 'Content-Type: application/x-www-form-urlencoded' \
+                                --data-urlencode 'grant_type=client_credentials' \
+                                --data-urlencode 'client_id=${{ env.UTILITY_DPC_CLIENT_ID }}' \
+                                --data-urlencode 'client_secret=${{ env.UTILITY_DPC_CLIENT_SECRET }}' \
+                                --data-urlencode 'audience=https://api.matillion.com')
+          ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r .access_token)
+          
+          API_DOMAIN="${{ vars.DPC_API_DOMAIN || 'api.matillion.com' }}"
+          API_URL="https://${{ env.UTILITY_DPC_ACCOUNT_REGION }}.${API_DOMAIN}/dpc/${{ env.UTILITY_DPC_API_VERSION }}/projects/${{ env.UTILITY_DPC_PROJECT_ID }}/pipeline-executions"
+          
+          JSON_PAYLOAD=$(jq -n \
+            --arg pName "${{ env.UTILITY_DPC_PIPELINE_NAME }}" \
+            --arg eName "${{ env.UTILITY_DPC_ENVIRONMENT_NAME }}" \
+            --arg b "$BRANCH_NAME" \
+            --arg c "$COMPANY" --arg r "$ROLE" --arg n "$NAME" \
+            --arg org "${{ github.repository_owner }}" \
+            --arg repo "${{ github.event.repository.name }}" \
+            --arg sN "${{ env.UTILITY_GH_TOKEN_SECRET_NAME }}" \
+            --arg sK "${{ env.UTILITY_GH_TOKEN_SECRET_KEY }}" \
+            --arg sR "${{ env.UTILITY_GH_TOKEN_SECRET_REGION }}" \
+            '{pipelineName: $pName, environmentName: $eName, scalarVariables: {pipe_branch: $b, pipe_company: $c, pipe_role: $r, pipe_name: $n, pipe_gh_org: $org, pipe_gh_repo: $repo, pipe_gh_token_secret: $sN, pipe_gh_token_secret_key: $sK, pipe_gh_token_secret_region: $sR}}')
+
+          if [[ "${{ env.UTILITY_DPC_PIPELINE_VERSION }}" != "LATEST" ]]; then
+            JSON_PAYLOAD=$(echo "$JSON_PAYLOAD" | jq --arg v "${{ env.UTILITY_DPC_PIPELINE_VERSION }}" '. + {versionName: $v}')
+          fi
+          
+          curl --request POST --url "$API_URL" --header "Authorization: Bearer $ACCESS_TOKEN" \
+               --header "Content-Type: application/json" --data "$JSON_PAYLOAD" --fail

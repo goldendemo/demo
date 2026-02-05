@@ -1,0 +1,56 @@
+# Full Maia Demo Configuration Example
+# This shows all available configuration options
+
+# Basic Information (REQUIRED)
+# This section replaces the old branch name format (company_role_name)
+demo:
+  company: "Default"
+  role: "Default"
+  name: "Default"
+  description: "Default"
+  # Target environment name in DPC for pipeline execution
+  # Takes precedence over mapping defined in .maia-experience/user-environment-mappings.yaml
+  # IMPORTANT: Change this if using a custom-named environment
+  # Default: "demo"
+  #environment_name: "demo"
+
+# Pipeline Behavior (OPTIONAL)
+# Control how the backend pipeline processes this branch
+pipeline:
+  # Set to false to preserve existing data landscape and SQL definitions
+  # Set to true (or omit) to regenerate data on every config change
+  # Default: true (always generate fresh data)
+  generate_data: true
+  
+  # AI generation mode for tools and roles data
+  # Options: "legacy", "cortex", "bedrock"
+  # - legacy: Uses Advanced Prompts Google Sheet
+  # - cortex: Uses Snowflake Cortex for AI generation
+  # - bedrock: Uses AWS Bedrock for AI generation
+  # Default: "cortex"
+  ai_generation_mode: "cortex"
+
+# Preferences (OPTIONAL)
+# Define additional roles and tools for more personalized content
+preferences:
+  # Additional role perspectives to include in the demo
+  roles:
+    #- "Instructor"
+  
+  # Tools and technologies to focus on
+  tools:
+    - "Informatica"
+    - "Alteryx"
+
+# Content Files (Do Not Use) - Support for Content Files coming soon!
+# Reference additional markdown files (transcripts, requirements, etc.)
+# Files must exist in the Maia Init/ folder
+#content:
+#  - file: "Maia Init/discovery-call-transcript.md"
+#    description: "Discovery call with stakeholders"
+#  
+#  - file: "Maia Init/requirements-document.md"
+#    description: "Detailed technical requirements"
+#  
+#  - file: "Maia Init/customer-interview-notes.md"
+#    description: "Notes from customer interviews"

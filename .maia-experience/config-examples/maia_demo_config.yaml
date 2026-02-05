@@ -1,0 +1,82 @@
+# Maia Demo Configuration
+# 
+# Edit this file and commit to trigger your personalized demo environment creation.
+# See templates/config-examples/ for more examples.
+#
+# Documentation: [Add link to your internal docs]
+
+# =============================================================================
+# REQUIRED: Basic Information
+# =============================================================================
+# This section replaces the old branch naming convention (company_role_name)
+# and allows for much more descriptive context.
+
+demo:
+  # Your company or organization name
+  company: "Your Company Name"
+  
+  # Your primary role or job title
+  role: "Data Engineer"
+  
+  # Your name or username
+  name: "Your Name"
+  
+  # A brief description of your data focus or use case (1-2 sentences)
+  description: "Describe your main data goals or focus area"
+  
+  # Target DPC environment for pipeline execution (OPTIONAL)
+  # Default: "demo"
+  # Change this if using a custom-named environment in DPC
+  # Must match the environment name exactly (case-sensitive)
+  # Examples: "demo", "dev", "staging", "prod"
+  environment_name: "demo"
+
+# =============================================================================
+# OPTIONAL: Pipeline Behavior
+# =============================================================================
+# Control how the backend pipeline processes this branch.
+# Remove this entire section to use defaults.
+
+pipeline:
+  # Set to false to preserve existing data landscape and SQL definitions
+  # Set to true (or omit) to regenerate data on every config change
+  # Default: true (always generate fresh data)
+  generate_data: true
+  
+  # AI generation mode for tools and roles data
+  # Options: "legacy", "cortex", "bedrock"
+  # - legacy: Uses Advanced Prompts Google Sheet (default)
+  # - cortex: Uses Snowflake Cortex for AI generation
+  # - bedrock: Uses AWS Bedrock for AI generation
+  ai_generation_mode: "cortex"
+
+# =============================================================================
+# OPTIONAL: Preferences
+# =============================================================================
+# Add additional roles and tools to further personalize your demo.
+# Remove this entire section if not needed.
+
+preferences:
+  # Additional role perspectives (leave empty [] if not needed)
+  roles: []
+    # - "Data Scientist"
+    # - "Data Analyst"
+  
+  # Tools and technologies you work with (leave empty [] if not needed)
+  tools: []
+    # - "dbt"
+    # - "Tableau"
+
+# =============================================================================
+# OPTIONAL: Content Files
+# =============================================================================
+# Reference additional markdown files for rich context (transcripts, requirements, etc.)
+# All files must exist in the "Maia Init/" folder before committing.
+# Remove this entire section if not needed.
+
+content: []
+  # - file: "Maia Init/discovery-call-transcript.md"
+  #   description: "Discovery call with stakeholders"
+  # 
+  # - file: "Maia Init/requirements-document.md"
+  #   description: "Detailed technical requirements"

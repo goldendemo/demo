@@ -1,0 +1,120 @@
+type: "orchestration"
+version: "1.0"
+pipeline:
+  metadata:
+    description: "Creates a checkpoint of the current schema state. All tables and views are cataloged for future restore/cleanup operations."
+  variables:
+    checkpoint_description:
+      metadata:
+        type: "TEXT"
+        description: "Description of what this checkpoint is for"
+        scope: "SHARED"
+        visibility: "PUBLIC"
+      defaultValue: "Manual checkpoint"
+    checkpoint_type:
+      metadata:
+        type: "TEXT"
+        description: "Type of checkpoint: MANUAL, SCHEDULED, PRE_DEPLOYMENT, POST_DEPLOYMENT, etc."
+        scope: "SHARED"
+        visibility: "PUBLIC"
+      defaultValue: "MANUAL"
+    checkpoint_id:
+      metadata:
+        type: "TEXT"
+        description: "Auto-generated checkpoint ID"
+        scope: "SHARED"
+        visibility: "PRIVATE"
+      defaultValue: ""
+  components:
+    Start:
+      type: "start"
+      transitions:
+        unconditional:
+          - "Generate Checkpoint ID"
+      parameters:
+        componentName: "Start"
+    Generate Checkpoint ID:
+      type: "update-scalar"
+      transitions:
+        success:
+          - "Create Checkpoint Record"
+      parameters:
+        componentName: "Generate Checkpoint ID"
+        scalarsToUpdate:
+          - - "checkpoint_id"
+            - "CP_${new Date().toISOString().replace(/[^0-9]/g, '_').substring(0, 19)}"
+    Create Checkpoint Record:
+      type: "sql-executor"
+      transitions:
+        success:
+          - "Output Checkpoint ID"
+      parameters:
+        componentName: "Create Checkpoint Record"
+        scriptLocation: "Component"
+        declareSqlVariables: "Include selected"
+        variablesToInclude:
+          - "checkpoint_id"
+          - "checkpoint_description"
+          - "checkpoint_type"
+        sqlScript: |
+          -- Capture current schema objects and create checkpoint
+          INSERT INTO CHECKPOINT_AUDIT (
+              CHECKPOINT_ID,
+              CHECKPOINT_TIMESTAMP,
+              CHECKPOINT_TYPE,
+              CREATED_BY,
+              DESCRIPTION,
+              OBJECTS_SNAPSHOT,
+              OBJECTS_COUNT,
+              STATUS
+          )
+          SELECT 
+              '${checkpoint_id}' AS CHECKPOINT_ID,
+              CURRENT_TIMESTAMP() AS CHECKPOINT_TIMESTAMP,
+              '${checkpoint_type}' AS CHECKPOINT_TYPE,
+              CURRENT_USER() AS CREATED_BY,
+              '${checkpoint_description}' AS DESCRIPTION,
+              OBJECT_CONSTRUCT(
+                  'tables', ARRAY_AGG(
+                      OBJECT_CONSTRUCT(
+                          'name', TABLE_NAME,
+                          'type', TABLE_TYPE,
+                          'created', CREATED,
+                          'row_count', ROW_COUNT,
+                          'bytes', BYTES
+                      )
+                  ) WITHIN GROUP (ORDER BY TABLE_NAME)
+              ) AS OBJECTS_SNAPSHOT,
+              COUNT(*) AS OBJECTS_COUNT,
+              'ACTIVE' AS STATUS
+          FROM INFORMATION_SCHEMA.TABLES
+          WHERE TABLE_SCHEMA = CURRENT_SCHEMA()
+            AND TABLE_NAME != 'CHECKPOINT_AUDIT';
+    Output Checkpoint ID:
+      type: "print-variables"
+      parameters:
+        componentName: "Output Checkpoint ID"
+        variablesToPrint:
+          - - "checkpoint_id"
+          - - "checkpoint_description"
+          - - "checkpoint_type"
+        prefixText: "✅ Checkpoint Created |"
+        includeVariableName: "Yes"
+design:
+  components:
+    Start:
+      position:
+        x: 0
+        y: 0
+    Generate Checkpoint ID:
+      position:
+        x: 160
+        y: 0
+    Create Checkpoint Record:
+      position:
+        x: 320
+        y: 0
+    Output Checkpoint ID:
+      position:
+        x: 480
+        y: 0

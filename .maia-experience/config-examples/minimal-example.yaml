@@ -1,0 +1,10 @@
+# Minimal Maia Demo Configuration
+# This is the simplest possible config - just the required fields
+# The environment_name is optional and defaults to "demo" if not specified
+
+demo:
+  company: "Acme Corporation"
+  role: "Data Engineer"
+  name: "John Doe"
+  description: "Basic data pipeline development"
+  # environment_name: "demo"  # Optional: Uncomment to specify custom environment

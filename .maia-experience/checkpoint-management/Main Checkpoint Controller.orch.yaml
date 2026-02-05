@@ -1,0 +1,367 @@
+type: "orchestration"
+version: "1.0"
+pipeline:
+  components:
+    Start:
+      type: "start"
+      transitions:
+        unconditional:
+        - "Set Variables"
+      parameters:
+        componentName: "Start"
+    Set Variables:
+      type: "update-scalar"
+      transitions:
+        success:
+        - "Print Variables"
+      parameters:
+        componentName: "Set Variables"
+        scalarsToUpdate:
+        - - "intent"
+          - "SET_INTENT_HERE"
+        - - "checkpoint_id"
+          - "SET_IF_NEEDED"
+        - - "checkpoint_description"
+          - "Manual checkpoint"
+        - - "dry_run"
+          - "YES"
+        - - "confirm_delete_all"
+          - "SET_IF_FULL_CLEANUP"
+    Print Variables:
+      type: "print-variables"
+      transitions:
+        success:
+        - "Route by Intent"
+      parameters:
+        componentName: "Print Variables"
+        variablesToPrint:
+        - - "intent"
+        - - "checkpoint_id"
+        - - "checkpoint_description"
+        - - "dry_run"
+        - - "confirm_delete_all"
+        prefixText: "Checkpoint Controller |"
+        includeVariableName: "Yes"
+    Route by Intent:
+      type: "if"
+      transitions:
+        "true":
+        - "Run Init Audit Table"
+        "false":
+        - "Check Create Checkpoint"
+      parameters:
+        componentName: "Route by Intent"
+        mode: "Simple"
+        combineConditions: "And"
+        condition:
+        - - "intent"
+          - "Is"
+          - "Equal to"
+          - "INIT_AUDIT_TABLE"
+    Check Create Checkpoint:
+      type: "if"
+      transitions:
+        "true":
+        - "Run Create Checkpoint"
+        "false":
+        - "Check Cleanup Since"
+      parameters:
+        componentName: "Check Create Checkpoint"
+        mode: "Simple"
+        combineConditions: "And"
+        condition:
+        - - "intent"
+          - "Is"
+          - "Equal to"
+          - "CREATE_CHECKPOINT"
+    Check Cleanup Since:
+      type: "if"
+      transitions:
+        "true":
+        - "Run Cleanup Since"
+        "false":
+        - "Check Full Cleanup"
+      parameters:
+        componentName: "Check Cleanup Since"
+        mode: "Simple"
+        combineConditions: "And"
+        condition:
+        - - "intent"
+          - "Is"
+          - "Equal to"
+          - "CLEANUP_SINCE"
+    Check Full Cleanup:
+      type: "if"
+      transitions:
+        "true":
+        - "Run Full Cleanup"
+        "false":
+        - "Check Restore"
+      parameters:
+        componentName: "Check Full Cleanup"
+        mode: "Simple"
+        combineConditions: "And"
+        condition:
+        - - "intent"
+          - "Is"
+          - "Equal to"
+          - "FULL_CLEANUP"
+    Check Restore:
+      type: "if"
+      transitions:
+        "true":
+        - "Run Restore"
+        "false":
+        - "Invalid Intent"
+      parameters:
+        componentName: "Check Restore"
+        mode: "Simple"
+        combineConditions: "And"
+        condition:
+        - - "intent"
+          - "Is"
+          - "Equal to"
+          - "RESTORE"
+    Run Init Audit Table:
+      type: "sql-executor"
+      transitions:
+        success:
+        - "Output Init Results"
+      parameters:
+        componentName: "Run Init Audit Table"
+        scriptLocation: "File"
+        fileName: ".maia-experience/checkpoint-management/init_checkpoint_audit_table.sql"
+    Output Init Results:
+      type: "print-variables"
+      parameters:
+        componentName: "Output Init Results"
+        variablesToPrint:
+        - - "intent"
+        prefixText: "✅ AUDIT TABLE INITIALIZED | CHECKPOINT_AUDIT table created and\
+          \ ready |"
+        includeVariableName: "No"
+    Run Create Checkpoint:
+      type: "run-orchestration"
+      parameters:
+        componentName: "Run Create Checkpoint"
+        orchestrationJob: ".maia-experience/checkpoint-management/Create Checkpoint"
+        setScalarVariables:
+        - - "checkpoint_description"
+          - "${checkpoint_description}"
+        - - "checkpoint_type"
+          - "MANUAL"
+        setGridVariables: []
+    Run Cleanup Since:
+      type: "run-orchestration"
+      parameters:
+        componentName: "Run Cleanup Since"
+        orchestrationJob: ".maia-experience/checkpoint-management/Cleanup Since Checkpoint"
+        setScalarVariables:
+        - - "checkpoint_id"
+          - "${checkpoint_id}"
+        - - "dry_run"
+          - "${dry_run}"
+        setGridVariables: []
+    Run Full Cleanup:
+      type: "run-orchestration"
+      parameters:
+        componentName: "Run Full Cleanup"
+        orchestrationJob: ".maia-experience/checkpoint-management/Full Schema Cleanup"
+        setScalarVariables:
+        - - "dry_run"
+          - "${dry_run}"
+        - - "confirm_delete_all"
+          - "${confirm_delete_all}"
+        setGridVariables: []
+    Run Restore:
+      type: "run-orchestration"
+      parameters:
+        componentName: "Run Restore"
+        orchestrationJob: ".maia-experience/checkpoint-management/Restore Dropped\
+          \ Objects"
+        setScalarVariables:
+        - - "checkpoint_id"
+          - "${checkpoint_id}"
+        - - "dry_run"
+          - "${dry_run}"
+        setGridVariables: []
+    Invalid Intent:
+      type: "print-variables"
+      transitions:
+        success:
+        - "End with Failure"
+      parameters:
+        componentName: "Invalid Intent"
+        variablesToPrint:
+        - - "intent"
+        prefixText: "❌ INVALID INTENT | Must be: INIT_AUDIT_TABLE, CREATE_CHECKPOINT,\
+          \ CLEANUP_SINCE, FULL_CLEANUP, or RESTORE | Received:"
+        includeVariableName: "No"
+    End with Failure:
+      type: "end-failure"
+      parameters:
+        componentName: "End with Failure"
+  variables:
+    intent:
+      metadata:
+        type: "TEXT"
+        description: "Operation to perform: CREATE_CHECKPOINT, CLEANUP_SINCE, FULL_CLEANUP,\
+          \ or RESTORE"
+        scope: "SHARED"
+        visibility: "PRIVATE"
+      defaultValue: ""
+    checkpoint_id:
+      metadata:
+        type: "TEXT"
+        description: "Checkpoint ID (required for CLEANUP_SINCE and RESTORE). Sample\
+          \ View Available Checkpoints transformation to get IDs."
+        scope: "SHARED"
+        visibility: "PRIVATE"
+      defaultValue: ""
+    checkpoint_description:
+      metadata:
+        type: "TEXT"
+        description: "Description for new checkpoint (used with CREATE_CHECKPOINT)"
+        scope: "SHARED"
+        visibility: "PRIVATE"
+      defaultValue: "Manual checkpoint"
+    dry_run:
+      metadata:
+        type: "TEXT"
+        description: "YES = preview only, NO = execute (used with CLEANUP_SINCE, FULL_CLEANUP,\
+          \ RESTORE)"
+        scope: "SHARED"
+        visibility: "PRIVATE"
+      defaultValue: "YES"
+    confirm_delete_all:
+      metadata:
+        type: "TEXT"
+        description: "Must be DELETE_ALL to execute FULL_CLEANUP"
+        scope: "SHARED"
+        visibility: "PRIVATE"
+      defaultValue: ""
+design:
+  components:
+    Run Cleanup Since:
+      position:
+        x: 640
+        "y": -40
+      tempMetlId: 12
+    Start:
+      position:
+        x: -230
+        "y": -200
+      tempMetlId: 1
+    Check Full Cleanup:
+      position:
+        x: 480
+        "y": 40
+      tempMetlId: 7
+    Run Create Checkpoint:
+      position:
+        x: 640
+        "y": -120
+      tempMetlId: 11
+    Check Restore:
+      position:
+        x: 480
+        "y": 120
+      tempMetlId: 8
+    Check Cleanup Since:
+      position:
+        x: 480
+        "y": -40
+      tempMetlId: 6
+    Check Create Checkpoint:
+      position:
+        x: 480
+        "y": -120
+      tempMetlId: 5
+    Output Init Results:
+      position:
+        x: 800
+        "y": -200
+      tempMetlId: 10
+    Invalid Intent:
+      position:
+        x: 640
+        "y": 200
+      tempMetlId: 15
+    Set Variables:
+      position:
+        x: -20
+        "y": -200
+      tempMetlId: 2
+    Run Init Audit Table:
+      position:
+        x: 640
+        "y": -200
+      tempMetlId: 9
+    Route by Intent:
+      position:
+        x: 480
+        "y": -200
+      tempMetlId: 4
+    Run Full Cleanup:
+      position:
+        x: 640
+        "y": 40
+      tempMetlId: 13
+    Print Variables:
+      position:
+        x: 320
+        "y": -200
+      tempMetlId: 3
+    Run Restore:
+      position:
+        x: 640
+        "y": 120
+      tempMetlId: 14
+    End with Failure:
+      position:
+        x: 800
+        "y": 200
+      tempMetlId: 16
+  notes:
+    "1":
+      position:
+        x: -250
+        "y": -130
+      size:
+        height: 575
+        width: 680
+      theme: "light-blue"
+      content: |
+        ### 🎯 Checkpoint Management Controller
+
+        **How to Use:**
+        1. Configure the **Set Variables** component with your values
+        2. Set the `intent` value to specify your operation
+        3. Set other variables as needed (see below)
+        4. Run this orchestration
+
+        **Intent Values:**
+        - `INIT_AUDIT_TABLE` - Initialize CHECKPOINT_AUDIT table (run first!)
+          - No variables required
+        - `CREATE_CHECKPOINT` - Create new checkpoint
+          - Required: `checkpoint_description`
+        - `CLEANUP_SINCE` - Cleanup objects after checkpoint
+          - Required: `checkpoint_id`, `dry_run`
+        - `FULL_CLEANUP` - Delete all objects except audit table
+          - Required: `dry_run`, `confirm_delete_all` (must be "DELETE_ALL")
+        - `RESTORE` - Restore dropped objects
+          - Required: `checkpoint_id`, `dry_run`
+
+        **Tips:**
+        - Sample "View Available Checkpoints" transformation to get checkpoint IDs
+        - Always use dry_run=YES first to preview changes
+        - For FULL_CLEANUP, set confirm_delete_all=DELETE_ALL to execute
+    "2":
+      position:
+        x: -130
+        "y": -270
+      size:
+        height: 138
+        width: 300
+      theme: "red"
+      content: "***Configure Variables***"

@@ -1,0 +1,51 @@
+# Full Maia Demo Configuration Example
+# This shows all available configuration options
+
+# Basic Information (REQUIRED)
+# This section replaces the old branch name format (company_role_name)
+demo:
+  company: "Global Analytics Inc."
+  role: "Senior Data Architect"
+  name: "Jane Smith"
+  description: "E-commerce analytics platform with real-time dashboards and ML integration"
+  # Target DPC environment for pipeline execution (OPTIONAL)
+  # Default: "demo" if not specified
+  # Must match your DPC environment name exactly (case-sensitive)
+  environment_name: "demo"  # Example: targeting staging environment
+
+# Pipeline Behavior (OPTIONAL)
+# Set to false to preserve existing data definitions when updating config
+pipeline:
+  generate_data: true
+  ai_generation_mode: "cortex"  # Options: legacy, cortex, bedrock
+
+# Preferences (OPTIONAL)
+# Define additional roles and tools for more personalized content
+preferences:
+  # Additional role perspectives to include in the demo
+  roles:
+    - "Data Quality Engineer"
+    - "Data Scientist"
+    - "Star Schema Data Engineer"
+    - "Data Analyst"
+  
+  # Tools and technologies to focus on
+  tools:
+    - "dbt"
+    - "Snowflake"
+    - "Tableau"
+    - "Python"
+    - "Airflow"
+
+# Content Files (OPTIONAL)
+# Reference additional markdown files (transcripts, requirements, etc.)
+# Files must exist in the Maia Init/ folder
+content:
+  - file: "Maia Init/discovery-call-transcript.md"
+    description: "Discovery call with stakeholders"
+  
+  - file: "Maia Init/requirements-document.md"
+    description: "Detailed technical requirements"
+  
+  - file: "Maia Init/customer-interview-notes.md"
+    description: "Notes from customer interviews"

@@ -1,0 +1,158 @@
+type: "orchestration"
+version: "1.0"
+pipeline:
+  components:
+    Start:
+      type: "start"
+      transitions:
+        unconditional:
+        - "CHECKPOINT_AUDIT Count"
+      parameters:
+        componentName: "Start"
+    Run Create Pre Checkpoint:
+      type: "run-orchestration"
+      transitions:
+        success:
+        - "init_maia_data.sql"
+      parameters:
+        componentName: "Run Create Pre Checkpoint"
+        orchestrationJob: ".maia-experience/checkpoint-management/Create Checkpoint.orch.yaml"
+        setScalarVariables:
+        - - "checkpoint_description"
+          - "Pre: ${checkpoint_description}"
+        - - "checkpoint_type"
+          - "PRE_DEPLOYMENT"
+        setGridVariables:
+      postProcessing:
+        updateOutputMessage:
+        updateScalarVariables:
+    Run Create Post Checkpoint:
+      type: "run-orchestration"
+      parameters:
+        componentName: "Run Create Post Checkpoint"
+        orchestrationJob: ".maia-experience/checkpoint-management/Create Checkpoint.orch.yaml"
+        setScalarVariables:
+        - - "checkpoint_description"
+          - "Post: ${checkpoint_description}"
+        - - "checkpoint_type"
+          - "POST_DEPLOYMENT"
+        setGridVariables:
+      postProcessing:
+        updateOutputMessage:
+        updateScalarVariables:
+    init_maia_data.sql:
+      type: "sql-executor"
+      transitions:
+        success:
+        - "Run Create Post Checkpoint"
+      parameters:
+        componentName: "init_maia_data.sql"
+        scriptLocation: "File"
+        declareSqlVariables: "Include selected"
+        variablesToInclude:
+        fileName: ".maia-experience/sql-init/init_maia_data.sql"
+      postProcessing:
+        updateOutputMessage:
+        updateScalarVariables:
+    init_maia_data.sql 2:
+      type: "sql-executor"
+      parameters:
+        componentName: "init_maia_data.sql 2"
+        declareSqlVariables: "Include selected"
+        variablesToInclude:
+        scriptLocation: "File"
+        fileName: ".maia-experience/sql-init/init_maia_data.sql"
+      postProcessing:
+        updateOutputMessage:
+        updateScalarVariables:
+    CHECKPOINT_AUDIT Count:
+      type: "query-to-scalar"
+      transitions:
+        success:
+        - "If CHECKPOINT_AUDIT Exists"
+      parameters:
+        componentName: "CHECKPOINT_AUDIT Count"
+        mode: "Advanced"
+        query: |-
+          SELECT COUNT(*)
+          FROM "INFORMATION_SCHEMA"."TABLES"
+          WHERE "TABLE_NAME" = 'CHECKPOINT_AUDIT'
+          AND "TABLE_SCHEMA" = CURRENT_SCHEMA()
+        scalarVariableMapping:
+        - - "priv_checkpoint_audit_exists"
+          - "COUNT(*)"
+      postProcessing:
+        updateOutputMessage:
+        updateScalarVariables:
+    If CHECKPOINT_AUDIT Exists:
+      type: "if"
+      transitions:
+        "true":
+        - "Run Create Pre Checkpoint"
+        "false":
+        - "init_maia_data.sql 2"
+      parameters:
+        componentName: "If CHECKPOINT_AUDIT Exists"
+        mode: "Simple"
+        condition:
+        - - "priv_checkpoint_audit_exists"
+          - "Is"
+          - "Equal to"
+          - "1"
+        combineConditions: "And"
+      postProcessing:
+        updateOutputMessage:
+        updateScalarVariables:
+  variables:
+    checkpoint_description:
+      metadata:
+        type: "TEXT"
+        description: "Description for checkpoints created during this init process"
+        scope: "SHARED"
+        visibility: "PUBLIC"
+      defaultValue: "Maia Init Data Load"
+    priv_checkpoint_audit_exists:
+      metadata:
+        type: "TEXT"
+        description: ""
+        scope: "SHARED"
+        visibility: "PUBLIC"
+        supportsDoubleResolution: true
+      defaultValue: "false"
+design:
+  components:
+    Start:
+      position:
+        x: -170
+        "y": 0
+      tempMetlId: 1
+    Run Create Pre Checkpoint:
+      position:
+        x: 480
+        "y": 0
+      tempMetlId: 4
+    Run Create Post Checkpoint:
+      position:
+        x: 820
+        "y": 0
+      tempMetlId: 6
+    init_maia_data.sql:
+      position:
+        x: 640
+        "y": 0
+      tempMetlId: 5
+    init_maia_data.sql 2:
+      position:
+        x: 470
+        "y": 170
+      tempMetlId: 7
+    CHECKPOINT_AUDIT Count:
+      position:
+        x: 160
+        "y": 0
+      tempMetlId: 2
+    If CHECKPOINT_AUDIT Exists:
+      position:
+        x: 320
+        "y": 0
+      tempMetlId: 3

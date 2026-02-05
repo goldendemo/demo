@@ -1,0 +1,42 @@
+type: "transformation"
+version: "1.0"
+pipeline:
+  metadata:
+    description: "Lists all available checkpoints with details. Sample this to see\
+      \ checkpoint IDs for restore/cleanup operations."
+  components:
+    Get Checkpoints:
+      type: "table-input"
+      parameters:
+        componentName: "Get Checkpoints"
+        database: "[Environment Default]"
+        schema: "[Environment Default]"
+        targetTable: "CHECKPOINT_AUDIT"
+        columnNames:
+        - "CHECKPOINT_ID"
+        - "CHECKPOINT_TIMESTAMP"
+        - "CHECKPOINT_TYPE"
+        - "DESCRIPTION"
+        - "OBJECTS_COUNT"
+        - "STATUS"
+        - "CREATED_AT"
+    Get Checkpoints Ordered:
+      type: "sql"
+      parameters:
+        componentName: "Get Checkpoints Ordered"
+        query: "SELECT \n  \"CHECKPOINT_ID\", \n  \"CHECKPOINT_TIMESTAMP\", \n  \"\
+          CHECKPOINT_TYPE\", \n  \"DESCRIPTION\", \n  \"OBJECTS_COUNT\", \n  \"STATUS\"\
+          , \n  \"CREATED_AT\" \nFROM \"CHECKPOINT_AUDIT\"\nORDER BY \"CHECKPOINT_TIMESTAMP\"\
+          \ desc"
+design:
+  components:
+    Get Checkpoints:
+      position:
+        x: 0
+        "y": 0
+      tempMetlId: 1
+    Get Checkpoints Ordered:
+      position:
+        x: 0
+        "y": 140
+      tempMetlId: 2

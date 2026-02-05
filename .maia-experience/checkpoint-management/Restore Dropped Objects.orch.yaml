@@ -1,0 +1,251 @@
+type: "orchestration"
+version: "1.0"
+pipeline:
+  metadata:
+    description: "Restores dropped objects using Snowflake time travel. Shows objects that existed at checkpoint but don't exist now."
+  variables:
+    checkpoint_id:
+      metadata:
+        type: "TEXT"
+        description: "Checkpoint ID to restore objects from (sample View Available Checkpoints to find IDs)"
+        scope: "SHARED"
+        visibility: "PRIVATE"
+      defaultValue: ""
+    dry_run:
+      metadata:
+        type: "TEXT"
+        description: "YES = preview only, NO = execute restore"
+        scope: "SHARED"
+        visibility: "PRIVATE"
+      defaultValue: "YES"
+  components:
+    Start:
+      type: "start"
+      transitions:
+        unconditional:
+          - "Check Dry Run Mode"
+      parameters:
+        componentName: "Start"
+    Check Dry Run Mode:
+      type: "if"
+      transitions:
+        true:
+          - "Preview Restore"
+        false:
+          - "Execute Restore"
+      parameters:
+        componentName: "Check Dry Run Mode"
+        mode: "Simple"
+        condition:
+          - - "dry_run"
+            - "Is"
+            - "Equal to"
+            - "YES"
+        combineConditions: "And"
+    Preview Restore:
+      type: "python-pushdown"
+      parameters:
+        componentName: "Preview Restore"
+        warehouse: "[Environment Default]"
+        pythonVersion: "3.10"
+        scriptLocation: "Component"
+        scriptTimeout: "360"
+        pythonScript: |
+          # Query objects that would be restored
+          query = f"""
+          WITH checkpoint_objects AS (
+              SELECT 
+                  VALUE:name::STRING AS object_name,
+                  VALUE:type::STRING AS object_type,
+                  VALUE:created::TIMESTAMP AS created_time
+              FROM CHECKPOINT_AUDIT,
+                   LATERAL FLATTEN(input => OBJECTS_SNAPSHOT:tables)
+              WHERE CHECKPOINT_ID = '${checkpoint_id}'
+          ),
+          current_objects AS (
+              SELECT TABLE_NAME AS object_name
+              FROM INFORMATION_SCHEMA.TABLES
+              WHERE TABLE_SCHEMA = CURRENT_SCHEMA()
+          )
+          SELECT 
+              ch.object_name,
+              ch.object_type,
+              ch.created_time
+          FROM checkpoint_objects ch
+          LEFT JOIN current_objects c ON ch.object_name = c.object_name
+          WHERE c.object_name IS NULL
+          ORDER BY ch.object_name
+          """
+          
+          df = session.sql(query).collect()
+          
+          print("\n" + "="*60)
+          print("🔍 DRY RUN - PREVIEW OF OBJECTS TO RESTORE")
+          print("="*60)
+          print(f"Checkpoint ID: ${checkpoint_id}")
+          print(f"\nObjects in checkpoint that don't exist now (would be restored):")
+          print()
+          
+          if len(df) == 0:
+              print("✅ No objects to restore - all checkpoint objects exist")
+          else:
+              views = [row for row in df if row['OBJECT_TYPE'] == 'VIEW']
+              tables = [row for row in df if row['OBJECT_TYPE'] in ('BASE TABLE', 'TABLE')]
+              
+              if views:
+                  print(f"\n📑 Views ({len(views)}):")
+                  for row in views:
+                      print(f"  - {row['OBJECT_NAME']}")
+                      print(f"    Command: UNDROP VIEW {row['OBJECT_NAME']}")
+              
+              if tables:
+                  print(f"\n📋 Tables ({len(tables)}):")
+                  for row in tables:
+                      print(f"  - {row['OBJECT_NAME']}")
+                      print(f"    Command: UNDROP TABLE {row['OBJECT_NAME']}")
+              
+              print(f"\nTotal: {len(df)} objects would be restored")
+          
+          print("\n⚠️  Note: Restore only works within Snowflake time travel retention window")
+          print("⚠️  To execute restore, set dry_run=NO and run again")
+          print("="*60 + "\n")
+    Execute Restore:
+      type: "python-pushdown"
+      transitions:
+        success:
+          - "Output Restore Results"
+      parameters:
+        componentName: "Execute Restore"
+        warehouse: "[Environment Default]"
+        pythonVersion: "3.10"
+        scriptLocation: "Component"
+        scriptTimeout: "360"
+        pythonScript: |
+          # Query objects to restore
+          query = f"""
+          WITH checkpoint_objects AS (
+              SELECT 
+                  VALUE:name::STRING AS object_name,
+                  VALUE:type::STRING AS object_type
+              FROM CHECKPOINT_AUDIT,
+                   LATERAL FLATTEN(input => OBJECTS_SNAPSHOT:tables)
+              WHERE CHECKPOINT_ID = '${checkpoint_id}'
+          ),
+          current_objects AS (
+              SELECT TABLE_NAME AS object_name
+              FROM INFORMATION_SCHEMA.TABLES
+              WHERE TABLE_SCHEMA = CURRENT_SCHEMA()
+          )
+          SELECT 
+              ch.object_name,
+              ch.object_type
+          FROM checkpoint_objects ch
+          LEFT JOIN current_objects c ON ch.object_name = c.object_name
+          WHERE c.object_name IS NULL
+          """
+          
+          objects_to_restore = session.sql(query).collect()
+          
+          print("\n" + "="*60)
+          print("♻️  EXECUTING RESTORE")
+          print("="*60)
+          print(f"Checkpoint ID: ${checkpoint_id}")
+          print()
+          
+          if len(objects_to_restore) == 0:
+              print("✅ No objects to restore - all checkpoint objects exist")
+              restore_count = 0
+          else:
+              # Separate tables and views
+              tables = [row for row in objects_to_restore if row['OBJECT_TYPE'] in ('BASE TABLE', 'TABLE')]
+              views = [row for row in objects_to_restore if row['OBJECT_TYPE'] == 'VIEW']
+              
+              restore_count = 0
+              
+              # Restore tables first
+              if tables:
+                  print(f"\nRestoring {len(tables)} table(s)...")
+                  for row in tables:
+                      object_name = row['OBJECT_NAME']
+                      try:
+                          session.sql(f"UNDROP TABLE {object_name}").collect()
+                          print(f"  ✓ Restored table: {object_name}")
+                          restore_count += 1
+                      except Exception as e:
+                          print(f"  ✗ Could not restore table {object_name}: {str(e)}")
+                          print(f"    (Object may be outside time travel window)")
+              
+              # Restore views
+              if views:
+                  print(f"\nRestoring {len(views)} view(s)...")
+                  for row in views:
+                      object_name = row['OBJECT_NAME']
+                      try:
+                          session.sql(f"UNDROP VIEW {object_name}").collect()
+                          print(f"  ✓ Restored view: {object_name}")
+                          restore_count += 1
+                      except Exception as e:
+                          print(f"  ✗ Could not restore view {object_name}: {str(e)}")
+                          print(f"    (Object may be outside time travel window)")
+              
+              print(f"\n✅ Successfully restored {restore_count} of {len(objects_to_restore)} objects")
+          
+          # Log restore in audit table
+          timestamp_str = session.sql("SELECT TO_VARCHAR(CURRENT_TIMESTAMP(), 'YYYYMMDD_HH24MISS')").collect()[0][0]
+          checkpoint_id_restore = f"RESTORE_{timestamp_str}"
+          session.sql(f"""
+          INSERT INTO CHECKPOINT_AUDIT (
+              CHECKPOINT_ID,
+              CHECKPOINT_TIMESTAMP,
+              CHECKPOINT_TYPE,
+              CREATED_BY,
+              DESCRIPTION,
+              STATUS,
+              METADATA
+          )
+          SELECT 
+              '{checkpoint_id_restore}' AS CHECKPOINT_ID,
+              CURRENT_TIMESTAMP() AS CHECKPOINT_TIMESTAMP,
+              'RESTORE' AS CHECKPOINT_TYPE,
+              CURRENT_USER() AS CREATED_BY,
+              'Restored objects from checkpoint: ${checkpoint_id}' AS DESCRIPTION,
+              'ACTIVE' AS STATUS,
+              OBJECT_CONSTRUCT('from_checkpoint', '${checkpoint_id}', 'objects_restored', {restore_count}) AS METADATA
+          """).collect()
+          
+          print(f"\nLogged restore as: {checkpoint_id_restore}")
+          print("⚠️  Note: Some objects may not restore if outside time travel window")
+          print("="*60 + "\n")
+
+    Output Restore Results:
+      type: "print-variables"
+      parameters:
+        componentName: "Output Restore Results"
+        variablesToPrint:
+          - - "checkpoint_id"
+          - - "dry_run"
+        prefixText: "✅ RESTORE EXECUTED | Objects restored using UNDROP (within time travel window) |"
+        includeVariableName: "Yes"
+design:
+  components:
+    Start:
+      position:
+        x: 0
+        y: 0
+    Check Dry Run Mode:
+      position:
+        x: 160
+        y: 0
+    Preview Restore:
+      position:
+        x: 320
+        y: -60
+    Execute Restore:
+      position:
+        x: 320
+        y: 60
+
+    Output Restore Results:
+      position:
+        x: 480
+        y: 60
