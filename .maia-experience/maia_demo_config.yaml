@@ -4,7 +4,7 @@
 # Basic Information (REQUIRED)
 # This section replaces the old branch name format (company_role_name)
 demo:
-  company: "XYZ Corp"
+  company: "ZZZ Corp"
   role: "VP Analytics"
   name: "Arawan"
   description: "Migrating from Informatica."
