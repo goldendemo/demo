@@ -4,10 +4,10 @@
 # Basic Information (REQUIRED)
 # This section replaces the old branch name format (company_role_name)
 demo:
-  company: "Default"
-  role: "Default"
-  name: "Default"
-  description: "Default"
+  company: "XYZ Corp"
+  role: "VP Analytics"
+  name: "Arawan"
+  description: "Migrating from Informatica."
   # Target environment name in DPC for pipeline execution
   # Takes precedence over mapping defined in .maia-experience/user-environment-mappings.yaml
   # IMPORTANT: Change this if using a custom-named environment
