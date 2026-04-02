@@ -1,77 +1,170 @@
-ELT pipeline extracting customer analytics from SQL Server, applying churn risk filtering, and loading to Snowflake for VP Analytics reporting.
+Informatica ELT pipeline extracting ZZZ Corp financial metrics from SQL Server, applying department-based filtering, and loading to Snowflake for executive analytics.
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
-<PowerCenter>
-  <!-- Source Definition -->
-  <Source name="SRC_CUSTOMER_ANALYTICS" type="Relational">
-    <Connection>
-      <Database>se-library-demo</Database>
-      <Server>se-library-mssql.database.windows.net</Server>
-      <Port>1433</Port>
-      <Username>matillion</Username>
-      <Schema>maia_experience</Schema>
-    </Connection>
-    <Table>XYZ_CUSTOMER_ANALYTICS</Table>
-    <Columns>
-      <Column name="CUSTOMER_ID" datatype="VARCHAR(10)"/>
-      <Column name="SEGMENT" datatype="VARCHAR(20)"/>
-      <Column name="LIFETIME_VALUE" datatype="NUMBER(10,2)"/>
-      <Column name="CHURN_RISK" datatype="VARCHAR(10)"/>
-      <Column name="REGION" datatype="VARCHAR(20)"/>
-    </Columns>
-  </Source>
+<POWERMART>
+  <REPOSITORY NAME="ZZZ_CORP_REPO">
+    <FOLDER NAME="Executive_Analytics">
+      
+      <!-- Source Definition -->
+      <SOURCE NAME="SQ_ZZZ_FINANCIAL_METRICS" DATABASETYPE="Microsoft SQL Server">
+        <SOURCEFIELD DATATYPE="string" NAME="METRIC_ID" PRECISION="10"/>
+        <SOURCEFIELD DATATYPE="string" NAME="DEPARTMENT" PRECISION="50"/>
+        <SOURCEFIELD DATATYPE="decimal" NAME="REVENUE_USD" PRECISION="15" SCALE="2"/>
+        <SOURCEFIELD DATATYPE="decimal" NAME="COST_USD" PRECISION="15" SCALE="2"/>
+        <SOURCEFIELD DATATYPE="decimal" NAME="PROFIT_MARGIN" PRECISION="5" SCALE="2"/>
+        <SOURCEFIELD DATATYPE="string" NAME="QUARTER" PRECISION="10"/>
+        <SOURCEFIELD DATATYPE="integer" NAME="YEAR" PRECISION="4"/>
+        <SOURCEFIELD DATATYPE="string" NAME="REGION" PRECISION="50"/>
+      </SOURCE>
 
-  <!-- Transformation Logic -->
-  <Transformation name="FILTER_HIGH_VALUE_CUSTOMERS" type="Filter">
-    <Condition>LIFETIME_VALUE > 50000 AND CHURN_RISK != 'High'</Condition>
-  </Transformation>
+      <!-- Target Definition -->
+      <TARGET NAME="TGT_FINANCIAL_ANALYTICS" DATABASETYPE="Snowflake">
+        <TARGETFIELD DATATYPE="string" NAME="METRIC_ID" PRECISION="10"/>
+        <TARGETFIELD DATATYPE="string" NAME="DEPARTMENT" PRECISION="50"/>
+        <TARGETFIELD DATATYPE="decimal" NAME="REVENUE_USD" PRECISION="15" SCALE="2"/>
+        <TARGETFIELD DATATYPE="decimal" NAME="COST_USD" PRECISION="15" SCALE="2"/>
+        <TARGETFIELD DATATYPE="decimal" NAME="PROFIT_MARGIN" PRECISION="5" SCALE="2"/>
+        <TARGETFIELD DATATYPE="string" NAME="QUARTER" PRECISION="10"/>
+        <TARGETFIELD DATATYPE="integer" NAME="YEAR" PRECISION="4"/>
+        <TARGETFIELD DATATYPE="string" NAME="REGION" PRECISION="50"/>
+        <TARGETFIELD DATATYPE="decimal" NAME="NET_PROFIT" PRECISION="15" SCALE="2"/>
+        <TARGETFIELD DATATYPE="timestamp" NAME="LOAD_TIMESTAMP"/>
+      </TARGET>
 
-  <Transformation name="EXP_ADD_ANALYTICS_FIELDS" type="Expression">
-    <Expression name="RISK_SCORE">
-      IIF(CHURN_RISK = 'Low', 1, IIF(CHURN_RISK = 'Medium', 2, 3))
-    </Expression>
-    <Expression name="VALUE_TIER">
-      IIF(LIFETIME_VALUE > 150000, 'Premium', 
-          IIF(LIFETIME_VALUE > 75000, 'Gold', 'Standard'))
-    </Expression>
-    <Expression name="LOAD_DATE">SYSDATE</Expression>
-  </Transformation>
+      <!-- Mapping -->
+      <MAPPING NAME="m_Financial_Metrics_ELT">
+        
+        <!-- Source Qualifier -->
+        <TRANSFORMATION NAME="SQ_ZZZ_FINANCIAL_METRICS" TYPE="Source Qualifier">
+          <TRANSFORMFIELD DATATYPE="string" NAME="METRIC_ID" PRECISION="10"/>
+          <TRANSFORMFIELD DATATYPE="string" NAME="DEPARTMENT" PRECISION="50"/>
+          <TRANSFORMFIELD DATATYPE="decimal" NAME="REVENUE_USD" PRECISION="15" SCALE="2"/>
+          <TRANSFORMFIELD DATATYPE="decimal" NAME="COST_USD" PRECISION="15" SCALE="2"/>
+          <TRANSFORMFIELD DATATYPE="decimal" NAME="PROFIT_MARGIN" PRECISION="5" SCALE="2"/>
+          <TRANSFORMFIELD DATATYPE="string" NAME="QUARTER" PRECISION="10"/>
+          <TRANSFORMFIELD DATATYPE="integer" NAME="YEAR" PRECISION="4"/>
+          <TRANSFORMFIELD DATATYPE="string" NAME="REGION" PRECISION="50"/>
+          <!-- Filter for high-performing departments -->
+          <TABLEATTRIBUTE NAME="Sql Query" VALUE="SELECT * FROM maia_experience.ZZZ_FINANCIAL_METRICS WHERE PROFIT_MARGIN > 0.25 AND YEAR = 2024"/>
+        </TRANSFORMATION>
 
-  <!-- Target Definition -->
-  <Target name="TGT_CUSTOMER_ANALYTICS_SF" type="Relational">
-    <Connection>
-      <Database>XYZ_ANALYTICS_DW</Database>
-      <Server>xyz-corp.snowflakecomputing.com</Server>
-      <Warehouse>ANALYTICS_WH</Warehouse>
-      <Schema>CUSTOMER_MART</Schema>
-    </Connection>
-    <Table>DIM_CUSTOMER_ANALYTICS</Table>
-    <LoadType>INSERT</LoadType>
-  </Target>
+        <!-- Expression Transformation -->
+        <TRANSFORMATION NAME="EXP_Calculate_Metrics" TYPE="Expression">
+          <TRANSFORMFIELD DATATYPE="string" NAME="METRIC_ID" PRECISION="10"/>
+          <TRANSFORMFIELD DATATYPE="string" NAME="DEPARTMENT" PRECISION="50"/>
+          <TRANSFORMFIELD DATATYPE="decimal" NAME="REVENUE_USD" PRECISION="15" SCALE="2"/>
+          <TRANSFORMFIELD DATATYPE="decimal" NAME="COST_USD" PRECISION="15" SCALE="2"/>
+          <TRANSFORMFIELD DATATYPE="decimal" NAME="PROFIT_MARGIN" PRECISION="5" SCALE="2"/>
+          <TRANSFORMFIELD DATATYPE="string" NAME="QUARTER" PRECISION="10"/>
+          <TRANSFORMFIELD DATATYPE="integer" NAME="YEAR" PRECISION="4"/>
+          <TRANSFORMFIELD DATATYPE="string" NAME="REGION" PRECISION="50"/>
+          <!-- Calculate net profit -->
+          <TRANSFORMFIELD DATATYPE="decimal" NAME="NET_PROFIT" PRECISION="15" SCALE="2" 
+                         EXPRESSION="REVENUE_USD - COST_USD"/>
+          <!-- Add load timestamp -->
+          <TRANSFORMFIELD DATATYPE="timestamp" NAME="LOAD_TIMESTAMP" 
+                         EXPRESSION="SYSDATE"/>
+        </TRANSFORMATION>
 
-  <!-- Mapping Flow -->
-  <Mapping name="m_Customer_Analytics_ELT">
-    <Flow>
-      SRC_CUSTOMER_ANALYTICS → 
-      FILTER_HIGH_VALUE_CUSTOMERS → 
-      EXP_ADD_ANALYTICS_FIELDS → 
-      TGT_CUSTOMER_ANALYTICS_SF
-    </Flow>
-  </Mapping>
+        <!-- Connector from Source to Expression -->
+        <CONNECTOR FROMFIELD="METRIC_ID" FROMINSTANCE="SQ_ZZZ_FINANCIAL_METRICS" 
+                  TOFIELD="METRIC_ID" TOINSTANCE="EXP_Calculate_Metrics"/>
+        <CONNECTOR FROMFIELD="DEPARTMENT" FROMINSTANCE="SQ_ZZZ_FINANCIAL_METRICS" 
+                  TOFIELD="DEPARTMENT" TOINSTANCE="EXP_Calculate_Metrics"/>
+        <CONNECTOR FROMFIELD="REVENUE_USD" FROMINSTANCE="SQ_ZZZ_FINANCIAL_METRICS" 
+                  TOFIELD="REVENUE_USD" TOINSTANCE="EXP_Calculate_Metrics"/>
+        <CONNECTOR FROMFIELD="COST_USD" FROMINSTANCE="SQ_ZZZ_FINANCIAL_METRICS" 
+                  TOFIELD="COST_USD" TOINSTANCE="EXP_Calculate_Metrics"/>
+        <CONNECTOR FROMFIELD="PROFIT_MARGIN" FROMINSTANCE="SQ_ZZZ_FINANCIAL_METRICS" 
+                  TOFIELD="PROFIT_MARGIN" TOINSTANCE="EXP_Calculate_Metrics"/>
+        <CONNECTOR FROMFIELD="QUARTER" FROMINSTANCE="SQ_ZZZ_FINANCIAL_METRICS" 
+                  TOFIELD="QUARTER" TOINSTANCE="EXP_Calculate_Metrics"/>
+        <CONNECTOR FROMFIELD="YEAR" FROMINSTANCE="SQ_ZZZ_FINANCIAL_METRICS" 
+                  TOFIELD="YEAR" TOINSTANCE="EXP_Calculate_Metrics"/>
+        <CONNECTOR FROMFIELD="REGION" FROMINSTANCE="SQ_ZZZ_FINANCIAL_METRICS" 
+                  TOFIELD="REGION" TOINSTANCE="EXP_Calculate_Metrics"/>
 
-  <!-- Workflow -->
-  <Workflow name="wf_Daily_Customer_Analytics">
-    <Session name="s_Customer_Analytics_Load">
-      <Mapping>m_Customer_Analytics_ELT</Mapping>
-      <Schedule>Daily at 02:00 AM</Schedule>
-    </Session>
-  </Workflow>
-</PowerCenter>
+        <!-- Connector from Expression to Target -->
+        <CONNECTOR FROMFIELD="METRIC_ID" FROMINSTANCE="EXP_Calculate_Metrics" 
+                  TOFIELD="METRIC_ID" TOINSTANCE="TGT_FINANCIAL_ANALYTICS"/>
+        <CONNECTOR FROMFIELD="DEPARTMENT" FROMINSTANCE="EXP_Calculate_Metrics" 
+                  TOFIELD="DEPARTMENT" TOINSTANCE="TGT_FINANCIAL_ANALYTICS"/>
+        <CONNECTOR FROMFIELD="REVENUE_USD" FROMINSTANCE="EXP_Calculate_Metrics" 
+                  TOFIELD="REVENUE_USD" TOINSTANCE="TGT_FINANCIAL_ANALYTICS"/>
+        <CONNECTOR FROMFIELD="COST_USD" FROMINSTANCE="EXP_Calculate_Metrics" 
+                  TOFIELD="COST_USD" TOINSTANCE="TGT_FINANCIAL_ANALYTICS"/>
+        <CONNECTOR FROMFIELD="PROFIT_MARGIN" FROMINSTANCE="EXP_Calculate_Metrics" 
+                  TOFIELD="PROFIT_MARGIN" TOINSTANCE="TGT_FINANCIAL_ANALYTICS"/>
+        <CONNECTOR FROMFIELD="QUARTER" FROMINSTANCE="EXP_Calculate_Metrics" 
+                  TOFIELD="QUARTER" TOINSTANCE="TGT_FINANCIAL_ANALYTICS"/>
+        <CONNECTOR FROMFIELD="YEAR" FROMINSTANCE="EXP_Calculate_Metrics" 
+                  TOFIELD="YEAR" TOINSTANCE="TGT_FINANCIAL_ANALYTICS"/>
+        <CONNECTOR FROMFIELD="REGION" FROMINSTANCE="EXP_Calculate_Metrics" 
+                  TOFIELD="REGION" TOINSTANCE="TGT_FINANCIAL_ANALYTICS"/>
+        <CONNECTOR FROMFIELD="NET_PROFIT" FROMINSTANCE="EXP_Calculate_Metrics" 
+                  TOFIELD="NET_PROFIT" TOINSTANCE="TGT_FINANCIAL_ANALYTICS"/>
+        <CONNECTOR FROMFIELD="LOAD_TIMESTAMP" FROMINSTANCE="EXP_Calculate_Metrics" 
+                  TOFIELD="LOAD_TIMESTAMP" TOINSTANCE="TGT_FINANCIAL_ANALYTICS"/>
+
+      </MAPPING>
+
+      <!-- Session Configuration -->
+      <SESSION NAME="s_Financial_Metrics_ELT" MAPPINGNAME="m_Financial_Metrics_ELT">
+        <!-- SQL Server Source Connection -->
+        <CONNECTIONREFERENCE CONNECTIONNAME="MSSQL_ZZZ_SOURCE" 
+                           CONNECTIONTYPE="relational" 
+                           REFTYPE="shared">
+          <CONNECTIONATTRIBUTE NAME="Database host name" VALUE="se-library-mssql.database.windows.net"/>
+          <CONNECTIONATTRIBUTE NAME="Database name" VALUE="se-library-demo"/>
+          <CONNECTIONATTRIBUTE NAME="Port number" VALUE="1433"/>
+          <CONNECTIONATTRIBUTE NAME="User name" VALUE="matillion"/>
+        </CONNECTIONREFERENCE>
+        
+        <!-- Snowflake Target Connection -->
+        <CONNECTIONREFERENCE CONNECTIONNAME="SNOWFLAKE_ZZZ_TARGET" 
+                           CONNECTIONTYPE="relational" 
+                           REFTYPE="shared">
+          <CONNECTIONATTRIBUTE NAME="Database host name" VALUE="zzzcorp.snowflakecomputing.com"/>
+          <CONNECTIONATTRIBUTE NAME="Database name" VALUE="ANALYTICS_DW"/>
+          <CONNECTIONATTRIBUTE NAME="Schema name" VALUE="FINANCIAL_MARTS"/>
+        </CONNECTIONREFERENCE>
+
+        <!-- Session Properties -->
+        <SESSTRANSFORMATIONINST TRANSFORMATIONNAME="TGT_FINANCIAL_ANALYTICS" 
+                               TRANSFORMATIONTYPE="Target">
+          <PARTITION DESCRIPTION="" NAME="Partition #1">
+            <TARGETATTRIBUTE NAME="Target load type" VALUE="Normal"/>
+            <TARGETATTRIBUTE NAME="Insert" VALUE="YES"/>
+            <TARGETATTRIBUTE NAME="Update" VALUE="NO"/>
+            <TARGETATTRIBUTE NAME="Delete" VALUE="NO"/>
+          </PARTITION>
+        </SESSTRANSFORMATIONINST>
+      </SESSION>
+
+      <!-- Workflow -->
+      <WORKFLOW NAME="wf_Financial_Analytics_Daily">
+        <WORKFLOWVARIABLE NAME="$$InputDir" DATATYPE="string" VALUE="/data/input/"/>
+        <WORKFLOWVARIABLE NAME="$$OutputDir" DATATYPE="string" VALUE="/data/output/"/>
+        
+        <WORKFLOWTASK NAME="Start" TYPE="Start"/>
+        <WORKFLOWTASK NAME="s_Financial_Metrics_ELT" TYPE="Session" 
+                     REUSABLEOBJECTNAME="s_Financial_Metrics_ELT"/>
+        <WORKFLOWTASK NAME="End" TYPE="End"/>
+        
+        <!-- Task Dependencies -->
+        <WORKFLOWLINK FROMTASK="Start" TOTASK="s_Financial_Metrics_ELT"/>
+        <WORKFLOWLINK FROMTASK="s_Financial_Metrics_ELT" TOTASK="End"/>
+      </WORKFLOW>
+
+    </FOLDER>
+  </REPOSITORY>
+</POWERMART>
 ```
 
 **Key Features:**
-- Filters high-value, low-risk customers (>$50K lifetime value)
-- Adds risk scoring and value tier classifications
-- Incremental load to Snowflake customer dimension
-- Automated daily refresh for VP Analytics dashboards
+- **Source:** SQL Server connection to `se-library-mssql.database.windows.net`
+- **Filter:** Extracts only high-margin departments (>25%) for 2024
+- **Transform:** Calculates net profit and adds load timestamp
+- **Target:** Loads to Snowflake analytics warehouse
+- **Automation:** Daily workflow execution for executive reporting

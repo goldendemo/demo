@@ -1,99 +1,104 @@
--- XYZ Corp Analytics Data Sources - Complete SQL Setup
+-- ZZZ Corp Analytics Data Sources SQL Script
+-- Complete table creation and data insertion for Snowflake
 
--- Table 1: XYZ_CUSTOMER_ANALYTICS
-CREATE OR REPLACE TABLE XYZ_CUSTOMER_ANALYTICS (
-    CUSTOMER_ID VARCHAR(16777216),
-    SEGMENT VARCHAR(16777216),
-    ACQUISITION_DATE VARCHAR(16777216),
-    LIFETIME_VALUE VARCHAR(16777216),
-    CHURN_RISK VARCHAR(16777216),
+-- Create and populate ZZZ_FINANCIAL_METRICS table
+CREATE OR REPLACE TABLE ZZZ_FINANCIAL_METRICS (
+    METRIC_ID VARCHAR(16777216),
+    DEPARTMENT VARCHAR(16777216),
+    REVENUE_USD VARCHAR(16777216),
+    COST_USD VARCHAR(16777216),
+    PROFIT_MARGIN VARCHAR(16777216),
+    QUARTER VARCHAR(16777216),
+    YEAR VARCHAR(16777216),
     REGION VARCHAR(16777216)
 );
 
-INSERT INTO XYZ_CUSTOMER_ANALYTICS VALUES
-('C001', 'Enterprise', '2023-01-15', '125000', 'Low', 'North America'),
-('C002', 'SMB', '2023-02-20', '45000', 'Medium', 'Europe'),
-('C003', 'Enterprise', '2023-01-08', '200000', 'Low', 'Asia Pacific'),
-('C004', 'Startup', '2023-03-12', '15000', 'High', 'North America'),
-('C005', 'SMB', '2023-02-28', '67000', 'Low', 'Europe'),
-('C006', 'Enterprise', '2023-03-05', '180000', 'Low', 'North America'),
-('C007', 'Startup', '2023-03-18', '22000', 'High', 'Asia Pacific'),
-('C008', 'SMB', '2023-02-14', '55000', 'Medium', 'Europe'),
-('C009', 'Enterprise', '2023-01-22', '310000', 'Low', 'Asia Pacific'),
-('C010', 'SMB', '2023-03-01', '38000', 'Medium', 'North America'),
-('C011', 'Startup', '2023-03-20', '18000', 'High', 'Europe'),
-('C012', 'Enterprise', '2023-01-30', '275000', 'Low', 'North America'),
-('C013', 'SMB', '2023-02-10', '72000', 'Low', 'Asia Pacific'),
-('C014', 'Startup', '2023-03-25', '12000', 'High', 'Europe'),
-('C015', 'Enterprise', '2023-02-05', '195000', 'Medium', 'North America'),
-('C016', 'SMB', '2023-03-08', '41000', 'Medium', 'Asia Pacific'),
-('C017', 'Startup', '2023-03-15', '25000', 'High', 'Europe'),
-('C018', 'Enterprise', '2023-01-18', '220000', 'Low', 'Asia Pacific'),
-('C019', 'SMB', '2023-02-22', '63000', 'Low', 'North America'),
-('C020', 'Startup', '2023-03-28', '16000', 'High', 'Europe');
+INSERT INTO ZZZ_FINANCIAL_METRICS VALUES
+('FM001', 'Sales', '2500000', '1800000', '0.28', 'Q1', '2024', 'North America'),
+('FM002', 'Marketing', '450000', '320000', '0.29', 'Q1', '2024', 'Europe'),
+('FM003', 'Operations', '1200000', '950000', '0.21', 'Q1', '2024', 'Asia Pacific'),
+('FM004', 'Sales', '2750000', '1950000', '0.29', 'Q2', '2024', 'North America'),
+('FM005', 'R&D', '800000', '720000', '0.10', 'Q2', '2024', 'Global'),
+('FM006', 'Sales', '2650000', '1850000', '0.30', 'Q3', '2024', 'North America'),
+('FM007', 'Marketing', '520000', '350000', '0.33', 'Q2', '2024', 'Europe'),
+('FM008', 'Operations', '1350000', '1000000', '0.26', 'Q2', '2024', 'Asia Pacific'),
+('FM009', 'R&D', '850000', '750000', '0.12', 'Q3', '2024', 'Global'),
+('FM010', 'Sales', '2800000', '1980000', '0.29', 'Q4', '2024', 'North America'),
+('FM011', 'Marketing', '480000', '340000', '0.29', 'Q3', '2024', 'Europe'),
+('FM012', 'Operations', '1280000', '970000', '0.24', 'Q3', '2024', 'Asia Pacific'),
+('FM013', 'Sales', '2450000', '1750000', '0.29', 'Q1', '2024', 'Europe'),
+('FM014', 'Marketing', '560000', '380000', '0.32', 'Q4', '2024', 'Europe'),
+('FM015', 'Operations', '1400000', '1050000', '0.25', 'Q4', '2024', 'Asia Pacific'),
+('FM016', 'R&D', '900000', '780000', '0.13', 'Q4', '2024', 'Global'),
+('FM017', 'Sales', '2300000', '1650000', '0.28', 'Q1', '2024', 'Asia Pacific'),
+('FM018', 'Marketing', '420000', '300000', '0.29', 'Q1', '2024', 'North America'),
+('FM019', 'Operations', '1150000', '900000', '0.22', 'Q1', '2024', 'Europe'),
+('FM020', 'R&D', '750000', '680000', '0.09', 'Q1', '2024', 'Global');
 
--- Table 2: XYZ_PRODUCT_PERFORMANCE
-CREATE OR REPLACE TABLE XYZ_PRODUCT_PERFORMANCE (
-    PRODUCT_ID VARCHAR(16777216),
-    PRODUCT_NAME VARCHAR(16777216),
-    CATEGORY VARCHAR(16777216),
-    REVENUE_Q1 VARCHAR(16777216),
-    UNITS_SOLD VARCHAR(16777216),
-    MARGIN_PCT VARCHAR(16777216),
-    LAUNCH_DATE VARCHAR(16777216)
+-- Create and populate ZZZ_EMPLOYEE_PERFORMANCE table
+CREATE OR REPLACE TABLE ZZZ_EMPLOYEE_PERFORMANCE (
+    EMP_ID VARCHAR(16777216),
+    DEPARTMENT VARCHAR(16777216),
+    PERFORMANCE_SCORE VARCHAR(16777216),
+    SALARY_USD VARCHAR(16777216),
+    TENURE_MONTHS VARCHAR(16777216),
+    TRAINING_HOURS VARCHAR(16777216),
+    MANAGER_ID VARCHAR(16777216),
+    LOCATION VARCHAR(16777216)
 );
 
-INSERT INTO XYZ_PRODUCT_PERFORMANCE VALUES
-('P001', 'Analytics Pro', 'Software', '850000', '340', '65.2', '2022-06-15'),
-('P002', 'Data Insights Basic', 'Software', '420000', '890', '45.8', '2022-09-20'),
-('P003', 'Enterprise Dashboard', 'Platform', '1200000', '125', '72.1', '2021-11-10'),
-('P004', 'Mobile Analytics', 'Mobile', '320000', '1250', '38.5', '2023-01-05'),
-('P005', 'Custom Reports', 'Services', '180000', '45', '85.0', '2022-12-01'),
-('P006', 'Advanced Metrics', 'Software', '675000', '280', '58.3', '2022-08-12'),
-('P007', 'Real-time Monitor', 'Platform', '950000', '95', '68.7', '2022-04-18'),
-('P008', 'Data Warehouse Pro', 'Platform', '1450000', '75', '78.2', '2021-09-25'),
-('P009', 'Mobile Lite', 'Mobile', '195000', '2100', '32.1', '2023-02-14'),
-('P010', 'Consulting Plus', 'Services', '240000', '28', '89.5', '2022-10-08'),
-('P011', 'Analytics Starter', 'Software', '285000', '650', '42.6', '2023-01-20'),
-('P012', 'Executive Views', 'Platform', '780000', '110', '71.8', '2022-07-03'),
-('P013', 'Field Analytics', 'Mobile', '410000', '980', '41.2', '2022-11-15'),
-('P014', 'Premium Support', 'Services', '320000', '52', '82.7', '2022-05-22'),
-('P015', 'Data Studio', 'Software', '560000', '420', '55.9', '2022-12-18'),
-('P016', 'Cloud Dashboard', 'Platform', '1100000', '88', '74.5', '2021-12-05'),
-('P017', 'Tablet Analytics', 'Mobile', '275000', '1580', '35.8', '2023-03-02'),
-('P018', 'Training Services', 'Services', '155000', '38', '87.3', '2022-09-10'),
-('P019', 'Insights Advanced', 'Software', '720000', '315', '62.4', '2022-06-28'),
-('P020', 'Enterprise Suite', 'Platform', '1650000', '65', '79.6', '2021-10-12');
+INSERT INTO ZZZ_EMPLOYEE_PERFORMANCE VALUES
+('EP001', 'Analytics', '4.2', '95000', '24', '40', 'MG001', 'New York'),
+('EP002', 'Sales', '3.8', '75000', '18', '25', 'MG002', 'Chicago'),
+('EP003', 'Marketing', '4.5', '82000', '36', '35', 'MG003', 'London'),
+('EP004', 'Operations', '3.9', '68000', '12', '30', 'MG004', 'Singapore'),
+('EP005', 'R&D', '4.7', '105000', '48', '50', 'MG001', 'San Francisco'),
+('EP006', 'Sales', '4.1', '78000', '22', '28', 'MG002', 'Dallas'),
+('EP007', 'Marketing', '3.7', '79000', '30', '32', 'MG003', 'Berlin'),
+('EP008', 'Operations', '4.3', '71000', '15', '35', 'MG004', 'Tokyo'),
+('EP009', 'R&D', '4.6', '110000', '42', '55', 'MG005', 'Boston'),
+('EP010', 'Analytics', '4.0', '92000', '20', '38', 'MG001', 'Seattle'),
+('EP011', 'Sales', '3.9', '76000', '16', '26', 'MG002', 'Miami'),
+('EP012', 'Marketing', '4.2', '85000', '28', '40', 'MG003', 'Paris'),
+('EP013', 'Operations', '4.1', '69000', '14', '33', 'MG004', 'Sydney'),
+('EP014', 'R&D', '4.8', '115000', '52', '60', 'MG005', 'Austin'),
+('EP015', 'Analytics', '3.8', '88000', '18', '35', 'MG001', 'Denver'),
+('EP016', 'Sales', '4.4', '82000', '26', '30', 'MG002', 'Phoenix'),
+('EP017', 'Marketing', '4.0', '80000', '32', '37', 'MG003', 'Madrid'),
+('EP018', 'Operations', '3.6', '65000', '10', '28', 'MG004', 'Bangkok'),
+('EP019', 'R&D', '4.5', '108000', '45', '52', 'MG005', 'Portland'),
+('EP020', 'Analytics', '4.3', '97000', '27', '42', 'MG001', 'Atlanta');
 
--- Table 3: XYZ_SALES_OPERATIONS
-CREATE OR REPLACE TABLE XYZ_SALES_OPERATIONS (
-    SALES_ID VARCHAR(16777216),
-    CUSTOMER_ID VARCHAR(16777216),
-    PRODUCT_ID VARCHAR(16777216),
-    SALE_DATE VARCHAR(16777216),
-    AMOUNT VARCHAR(16777216),
-    SALES_REP VARCHAR(16777216),
-    CHANNEL VARCHAR(16777216)
+-- Create and populate ZZZ_OPERATIONAL_KPI table
+CREATE OR REPLACE TABLE ZZZ_OPERATIONAL_KPI (
+    KPI_ID VARCHAR(16777216),
+    PROCESS_NAME VARCHAR(16777216),
+    EFFICIENCY_PCT VARCHAR(16777216),
+    DOWNTIME_HOURS VARCHAR(16777216),
+    QUALITY_SCORE VARCHAR(16777216),
+    COST_PER_UNIT VARCHAR(16777216),
+    DATE VARCHAR(16777216),
+    FACILITY VARCHAR(16777216)
 );
 
-INSERT INTO XYZ_SALES_OPERATIONS VALUES
-('S001', 'C001', 'P003', '2023-03-15', '45000', 'John Smith', 'Direct'),
-('S002', 'C002', 'P002', '2023-03-18', '12000', 'Sarah Johnson', 'Partner'),
-('S003', 'C003', 'P001', '2023-03-20', '28000', 'Mike Chen', 'Online'),
-('S004', 'C001', 'P004', '2023-03-22', '15000', 'John Smith', 'Direct'),
-('S005', 'C004', 'P002', '2023-03-25', '8000', 'Lisa Wong', 'Online'),
-('S006', 'C005', 'P007', '2023-03-28', '32000', 'David Brown', 'Partner'),
-('S007', 'C006', 'P008', '2023-03-30', '85000', 'John Smith', 'Direct'),
-('S008', 'C007', 'P009', '2023-04-02', '5500', 'Anna Martinez', 'Online'),
-('S009', 'C008', 'P006', '2023-04-05', '22000', 'Sarah Johnson', 'Partner'),
-('S010', 'C009', 'P020', '2023-04-08', '95000', 'Mike Chen', 'Direct'),
-('S011', 'C010', 'P011', '2023-04-10', '9500', 'Lisa Wong', 'Online'),
-('S012', 'C011', 'P013', '2023-04-12', '7200', 'David Brown', 'Partner'),
-('S013', 'C012', 'P016', '2023-04-15', '78000', 'John Smith', 'Direct'),
-('S014', 'C013', 'P015', '2023-04-18', '18500', 'Anna Martinez', 'Online'),
-('S015', 'C014', 'P017', '2023-04-20', '4800', 'Sarah Johnson', 'Partner'),
-('S016', 'C015', 'P012', '2023-04-22', '42000', 'Mike Chen', 'Direct'),
-('S017', 'C016', 'P019', '2023-04-25', '25000', 'Lisa Wong', 'Online'),
-('S018', 'C017', 'P014', '2023-04-28', '6800', 'David Brown', 'Partner'),
-('S019', 'C018', 'P005', '2023-04-30', '15500', 'Anna Martinez', 'Direct'),
-('S020', 'C019', 'P010', '2023-05-02', '12200', 'John Smith', 'Online');
+INSERT INTO ZZZ_OPERATIONAL_KPI VALUES
+('OK001', 'Manufacturing', '87.5', '2.5', '4.3', '12.50', '2024-03-15', 'Plant_A'),
+('OK002', 'Logistics', '92.1', '1.2', '4.6', '8.75', '2024-03-15', 'Warehouse_B'),
+('OK003', 'Quality_Control', '95.2', '0.8', '4.8', '15.20', '2024-03-15', 'Lab_C'),
+('OK004', 'Manufacturing', '89.3', '1.9', '4.4', '11.80', '2024-03-16', 'Plant_A'),
+('OK005', 'Customer_Service', '88.7', '3.1', '4.2', '22.30', '2024-03-16', 'Call_Center_D'),
+('OK006', 'Manufacturing', '91.2', '1.5', '4.5', '12.10', '2024-03-17', 'Plant_B'),
+('OK007', 'Logistics', '89.8', '2.0', '4.4', '9.20', '2024-03-17', 'Warehouse_C'),
+('OK008', 'Quality_Control', '93.7', '1.1', '4.7', '14.80', '2024-03-17', 'Lab_A'),
+('OK009', 'Customer_Service', '90.3', '2.8', '4.3', '21.50', '2024-03-18', 'Call_Center_E'),
+('OK010', 'Manufacturing', '86.9', '2.8', '4.2', '13.20', '2024-03-18', 'Plant_C'),
+('OK011', 'Logistics', '94.5', '0.9', '4.7', '8.45', '2024-03-19', 'Warehouse_A'),
+('OK012', 'Quality_Control', '96.1', '0.6', '4.9', '15.60', '2024-03-19', 'Lab_B'),
+('OK013', 'Customer_Service', '87.2', '3.5', '4.1', '23.10', '2024-03-20', 'Call_Center_F'),
+('OK014', 'Manufacturing', '88.7', '2.2', '4.3', '12.80', '2024-03-20', 'Plant_A'),
+('OK015', 'Logistics', '91.3', '1.7', '4.5', '9.10', '2024-03-21', 'Warehouse_D'),
+('OK016', 'Quality_Control', '94.8', '0.9', '4.8', '15.40', '2024-03-21', 'Lab_C'),
+('OK017', 'Customer_Service', '89.6', '2.9', '4.4', '22.80', '2024-03-22', 'Call_Center_D'),
+('OK018', 'Manufacturing', '90.1', '1.8', '4.4', '11.95', '2024-03-22', 'Plant_B'),
+('OK019', 'Logistics', '93.2', '1.3', '4.6', '8.90', '2024-03-23', 'Warehouse_B'),
+('OK020', 'Quality_Control', '95.7', '0.7', '4.8', '15.10', '2024-03-23', 'Lab_A');
