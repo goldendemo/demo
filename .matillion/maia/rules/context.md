@@ -1,23 +1,25 @@
-# ⏳ Automation In Progress
+# Maia Experience Configuration Required
 
-This demo environment is being set up automatically.
-
-## Current Status
-Your demo configuration is being processed by the automation system.
+## Status
+⚠️ **No Maia Experience automation has been run yet.**
 
 ## Next Steps
+To configure your personalized Maia demo environment:
 
-### If you created this branch using the `company_role_name` naming convention:
-1. **Wait 1-2 minutes** for the automation workflow to complete
-2. **Pull Remote Changes** in DPC to refresh this file
-3. Once updated, this file will contain your personalized demo context
+### 1. Update Configuration File
+Open `.maia-experience/maia_demo_config.yaml` and update the required fields:
 
-### If you're using the new config file-based workflow:
-1. **Pull Remote Changes** in DPC to confirm the branch is ready for further configuration
-2. Update the `maia_demo_config.yaml` file with your demo details
-3. Commit and push your changes to trigger the automation
+```yaml
+demo:
+  company: "Your Company Name"
+  role: "Your Role"
+  name: "Your Name"
+  description: "Brief description of your data goals"
+  environment_name: "demo"
+```
 
-## What You're Waiting For
-The `.github/workflows/trigger-maia-demo-init.yml` workflow creates the initial branch structure and configuration files.
+### 2. Commit and Push Your Changes
+The automation will then process your configuration and provision your environment.
 
-If this message persists after 5 minutes, please check the GitHub Actions workflow logs for any errors.
+---
+**Note:** Alternatively, you can use the `company_role_name` branch naming format (e.g., `Acme_Engineer_John`) to trigger automation immediately upon branch creation.
